@@ -1,18 +1,12 @@
 name: Build NyxenPlayer for Windows
 on:
   push:
-    paths:
-      - 'windows/**'
-      - '.github/workflows/build-windows.yml'
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: windows-latest
     timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: windows
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,5 +19,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: NyxenPlayer-windows
-          path: windows/dist/*.exe
+          path: dist/*.exe
           retention-days: 30
