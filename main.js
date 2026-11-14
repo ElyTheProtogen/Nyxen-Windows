@@ -1,0 +1,154 @@
+const { app, BrowserWindow, ipcMain, dialog, protocol, net, globalShortcut, Menu, nativeImage, shell } = require('electron');
+const path = require('path');
+const fs = require('fs');
+const fsp = fs.promises;
+const crypto = require('crypto');
+const { pathToFileURL } = require('url');
+
+// nyxen:// serves covers and audio files with CORS headers, so the Web Audio equalizer can process the sound.
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'nyxen', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } }
+]);
+
+const AUDIO_EXT = new Set(['.mp3', '.m4a', '.aac', '.wav', '.ogg', '.opus', '.flac']);
+let win = null;
+
+const userData = () => app.getPath('userData');
+const stateFile = () => path.join(userData(), 'nyxen-state.json');
+const coverDir = () => path.join(userData(), 'covers');
+const idFor = (p) => crypto.createHash('sha1').update(p.toLowerCase()).digest('hex').slice(0, 12);
+
+if (!app.requestSingleInstanceLock()) app.quit();
+app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
+
+function withCors(res) {
+  const headers = Object.fromEntries(res.headers);
+  headers['Access-Control-Allow-Origin'] = '*';
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
+
+function createWindow() {
+  win = new BrowserWindow({
+    width: 1280, height: 820, minWidth: 980, minHeight: 640,
+    backgroundColor: '#000000', title: 'NyxenPlayer',
+    icon: path.join(__dirname, 'build', 'icon.png'),
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#000000', symbolColor: '#ffffff', height: 40 },
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true, nodeIntegration: false,
+      autoplayPolicy: 'no-user-gesture-required'
+    }
+  });
+  Menu.setApplicationMenu(null);
+  win.loadFile(path.join(__dirname, 'src', 'index.html'));
+  win.on('closed', () => { win = null; });
+}
+
+async function walk(dir, out) {
+  let ents;
+  try { ents = await fsp.readdir(dir, { withFileTypes: true }); } catch { return; }
+  for (const e of ents) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) await walk(p, out);
+    else if (AUDIO_EXT.has(path.extname(e.name).toLowerCase())) out.push(p);
+  }
+}
+
+async function scan(targets, known) {
+  const mm = await import('music-metadata');
+  const files = [];
+  for (const t of targets) {
+    const st = await fsp.stat(t).catch(() => null);
+    if (!st) continue;
+    if (st.isDirectory()) await walk(t, files);
+    else if (AUDIO_EXT.has(path.extname(t).toLowerCase())) files.push(t);
+  }
+  const fresh = files.filter((f) => !known.has(idFor(f)));
+  await fsp.mkdir(coverDir(), { recursive: true });
+  const added = [];
+  let done = 0;
+  for (const f of fresh) {
+    const id = idFor(f);
+    try {
+      const meta = await mm.parseFile(f);
+      const c = meta.common;
+      const pic = c.picture && c.picture[0];
+      let hasCover = false;
+      if (pic) {
+        const img = nativeImage.createFromBuffer(Buffer.from(pic.data));
+        if (!img.isEmpty()) {
+          const small = img.getSize().width > 400 ? img.resize({ width: 400, quality: 'good' }) : img;
+          await fsp.writeFile(path.join(coverDir(), id + '.jpg'), small.toJPEG(82));
+          hasCover = true;
+        }
+      }
+      added.push({
+        id, path: f,
+        title: c.title || path.basename(f, path.extname(f)),
+        artist: c.artist || 'Unknown artist',
+        album: c.album || 'Unknown album',
+        genre: (c.genre && c.genre[0]) || 'Unknown genre',
+        duration: meta.format.duration || 0,
+        added: Date.now(), plays: 0, last: 0, fav: false, cover: hasCover
+      });
+    } catch { /* unreadable file: skip it */ }
+    done++;
+    if (win && (done % 5 === 0 || done === fresh.length)) win.webContents.send('scan:progress', { done, total: fresh.length });
+  }
+  return { added, found: files.length };
+}
+
+ipcMain.handle('state:load', async () => { try { return JSON.parse(await fsp.readFile(stateFile(), 'utf8')); } catch { return null; } });
+ipcMain.handle('state:save', async (_e, data) => {
+  await fsp.mkdir(userData(), { recursive: true });
+  const tmp = stateFile() + '.tmp';
+  await fsp.writeFile(tmp, JSON.stringify(data));
+  await fsp.rename(tmp, stateFile());
+  return true;
+});
+ipcMain.handle('dialog:folder', async () => {
+  const r = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
+  return r.canceled ? null : r.filePaths[0];
+});
+ipcMain.handle('dialog:files', async () => {
+  const r = await dialog.showOpenDialog(win, {
+    properties: ['openFile', 'multiSelections'],
+    filters: [{ name: 'Audio', extensions: ['mp3', 'm4a', 'aac', 'wav', 'ogg', 'opus', 'flac'] }]
+  });
+  return r.canceled ? [] : r.filePaths;
+});
+ipcMain.handle('scan', (_e, targets, known) => scan(targets, new Set(known)));
+ipcMain.handle('wipe', async () => {
+  await fsp.rm(stateFile(), { force: true });
+  await fsp.rm(coverDir(), { recursive: true, force: true });
+  return true;
+});
+ipcMain.handle('open-external', (_e, url) => { if (/^https:\/\//.test(url)) shell.openExternal(url); });
+
+app.whenReady().then(() => {
+  protocol.handle('nyxen', async (req) => {
+    try {
+      const u = new URL(req.url);
+      if (u.hostname === 'cover') {
+        const f = path.join(coverDir(), path.basename(u.pathname) + '.jpg');
+        return withCors(await net.fetch(pathToFileURL(f).toString()));
+      }
+      if (u.hostname === 'file') {
+        const p = Buffer.from(u.pathname.slice(1), 'base64url').toString('utf8');
+        return withCors(await net.fetch(pathToFileURL(p).toString(), { headers: req.headers }));
+      }
+    } catch { /* fall through to 404 */ }
+    return new Response('not found', { status: 404 });
+  });
+
+  createWindow();
+  const send = (c) => () => { if (win) win.webContents.send('cmd', c); };
+  globalShortcut.register('MediaPlayPause', send('toggle'));
+  globalShortcut.register('MediaNextTrack', send('next'));
+  globalShortcut.register('MediaPreviousTrack', send('prev'));
+  globalShortcut.register('MediaStop', send('stop'));
+});
+
+app.on('will-quit', () => globalShortcut.unregisterAll());
+app.on('window-all-closed', () => app.quit());

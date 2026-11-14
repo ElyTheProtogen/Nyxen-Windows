@@ -1,0 +1,34 @@
+{
+  "name": "nyxenplayer",
+  "productName": "NyxenPlayer",
+  "version": "1.0.0",
+  "description": "NyxenPlayer for Windows: a local-first music player",
+  "main": "main.js",
+  "author": "NyxenPlayer",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --publish never"
+  },
+  "dependencies": {
+    "music-metadata": "^10.0.0"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.nyxen.player",
+    "productName": "NyxenPlayer",
+    "directories": { "output": "dist" },
+    "files": ["main.js", "preload.js", "src/**/*", "build/icon.png", "package.json"],
+    "win": {
+      "icon": "build/icon.png",
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ]
+    },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "perMachine": false, "shortcutName": "NyxenPlayer" }
+  }
+}
