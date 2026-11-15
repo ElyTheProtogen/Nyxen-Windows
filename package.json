@@ -8,7 +8,8 @@
   "license": "UNLICENSED",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win --publish never"
+    "dist": "electron-builder --win --publish never",
+    "check": "node --check main.js && node --check preload.js && node --check src/app.js"
   },
   "dependencies": {
     "music-metadata": "^10.0.0"

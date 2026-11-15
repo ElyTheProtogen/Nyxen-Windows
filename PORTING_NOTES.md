@@ -3,7 +3,7 @@
 This desktop update ports the Android Nyxen Player capabilities that have practical Windows equivalents.
 
 ## Ported
-- Eight generated offline wallpapers and three original 48-second stereo soundscapes, with three matching generated cover images.
+- Eight generated offline wallpapers. The optional soundscape audio and cover assets are absent from this repository and are reported as unavailable by the import action.
 - Playback speed controls (0.5×–2×), resume-on-launch, saved queue restoration, auto-play similar tracks, and an end-of-track sleep timer.
 - Sleep timer fade-out preference and Windows display-sleep prevention.
 - Timed LRC and plain-text lyrics import, display, removal, and current-line highlighting.
@@ -21,5 +21,5 @@ This desktop update ports the Android Nyxen Player capabilities that have practi
 ## Validation
 - JavaScript syntax checks passed for `src/app.js`, `main.js`, and `preload.js`.
 - `package.json` parses successfully.
-- Offline assets were checked: 8 PNG wallpapers, 3 PNG covers, and 3 stereo 44.1 kHz / 48-second WAV tracks.
+- Offline asset audit found 8 PNG wallpapers; the referenced 3 WAV tracks and 3 cover PNGs are missing.
 - A Windows installer build was not run in this environment. Run `npm install` and `npm run dist` on Windows (or use the included GitHub Actions workflow) to produce the installer and portable executable.

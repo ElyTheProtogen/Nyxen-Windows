@@ -18,6 +18,7 @@ const fs = require('fs');
 const fsp = fs.promises;
 const crypto = require('crypto');
 const { pathToFileURL } = require('url');
+const { Readable } = require('stream');
 
 // nyxen:// serves covers, audio and video files with CORS headers.
 protocol.registerSchemesAsPrivileged([
@@ -43,6 +44,13 @@ const VIDEO_EXT = new Set([
 ]);
 
 let win = null;
+const allowedMediaPaths = new Set();
+const mediaPathKey = (value) => path.resolve(value).toLowerCase();
+function rememberStateMedia(state) {
+  for (const item of [...(Array.isArray(state?.tracks) ? state.tracks : []), ...(Array.isArray(state?.videos) ? state.videos : [])]) {
+    if (item && typeof item.path === 'string' && (AUDIO_EXT.has(path.extname(item.path).toLowerCase()) || VIDEO_EXT.has(path.extname(item.path).toLowerCase()))) allowedMediaPaths.add(mediaPathKey(item.path));
+  }
+}
 
 const userData = () => app.getPath('userData');
 const stateFile = () => path.join(userData(), 'nyxen-state.json');
@@ -75,6 +83,67 @@ function withCors(res) {
   });
 }
 
+async function mediaResponse(req, filePath) {
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+    'Access-Control-Allow-Headers': 'Range, If-Range, Content-Type',
+    'Access-Control-Expose-Headers': 'Accept-Ranges, Content-Length, Content-Range',
+    'Accept-Ranges': 'bytes',
+    'Cache-Control': 'no-cache',
+    'Content-Disposition': 'inline',
+    'X-Content-Type-Options': 'nosniff'
+  };
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders });
+  if (!['GET', 'HEAD'].includes(req.method)) return new Response('method not allowed', { status: 405, headers: corsHeaders });
+  if (!allowedMediaPaths.has(mediaPathKey(filePath))) return new Response('forbidden', { status: 403, headers: corsHeaders });
+
+  let stat;
+  try { stat = await fsp.stat(filePath); } catch { return new Response('not found', { status: 404, headers: corsHeaders }); }
+  if (!stat.isFile()) return new Response('not found', { status: 404, headers: corsHeaders });
+
+  const mime = {
+    '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.aac': 'audio/aac',
+    '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.opus': 'audio/ogg',
+    '.flac': 'audio/flac', '.mp4': 'video/mp4', '.m4v': 'video/mp4',
+    '.webm': 'video/webm', '.mov': 'video/quicktime'
+  }[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
+  const headers = { ...corsHeaders, 'Content-Type': mime, 'Content-Length': String(stat.size) };
+  const range = req.headers.get('range');
+  let start = 0;
+  let end = Math.max(0, stat.size - 1);
+  let status = 200;
+
+  if (range) {
+    const match = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+    if (!match || (!match[1] && !match[2]) || stat.size === 0) {
+      return new Response(null, { status: 416, headers: { ...headers, 'Content-Range': `bytes */${stat.size}`, 'Content-Length': '0' } });
+    }
+    if (!match[1]) {
+      const suffix = Number(match[2]);
+      if (!Number.isSafeInteger(suffix) || suffix <= 0) {
+        return new Response(null, { status: 416, headers: { ...headers, 'Content-Range': `bytes */${stat.size}`, 'Content-Length': '0' } });
+      }
+      start = Math.max(0, stat.size - suffix);
+      end = stat.size - 1;
+    } else {
+      start = Number(match[1]);
+      end = match[2] ? Number(match[2]) : stat.size - 1;
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start >= stat.size || end < start) {
+        return new Response(null, { status: 416, headers: { ...headers, 'Content-Range': `bytes */${stat.size}`, 'Content-Length': '0' } });
+      }
+      end = Math.min(end, stat.size - 1);
+    }
+    status = 206;
+    headers['Content-Range'] = `bytes ${start}-${end}/${stat.size}`;
+    headers['Content-Length'] = String(end - start + 1);
+  }
+
+  if (req.method === 'HEAD') return new Response(null, { status, headers });
+  const stream = stat.size === 0 ? fs.createReadStream(filePath) : fs.createReadStream(filePath, { start, end });
+  return new Response(Readable.toWeb(stream), { status, headers });
+}
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1280,
@@ -94,11 +163,18 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
       autoplayPolicy: 'no-user-gesture-required'
     }
   });
 
   Menu.setApplicationMenu(null);
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', (event, url) => {
+    const appUrl = pathToFileURL(path.join(__dirname, 'src', 'index.html')).toString();
+    if (url !== appUrl) event.preventDefault();
+  });
 
   win.loadFile(path.join(__dirname, 'src', 'index.html'));
 
@@ -144,7 +220,9 @@ async function scan(targets, known) {
     }
   }
 
-  const fresh = files.filter((f) => !known.has(idFor(f)));
+  const uniqueFiles = [...new Map(files.map((file) => [path.resolve(file).toLowerCase(), file])).values()];
+  const knownIds = known instanceof Set ? known : new Set(Array.isArray(known) ? known : []);
+  const fresh = uniqueFiles.filter((file) => !knownIds.has(idFor(file)));
 
   await fsp.mkdir(coverDir(), { recursive: true });
 
@@ -162,22 +240,21 @@ async function scan(targets, known) {
       let hasCover = false;
 
       if (pic) {
-        const img = nativeImage.createFromBuffer(Buffer.from(pic.data));
-
-        if (!img.isEmpty()) {
-          const small = img.getSize().width > 400
-            ? img.resize({ width: 400, quality: 'good' })
-            : img;
-
-          await fsp.writeFile(
-            path.join(coverDir(), id + '.jpg'),
-            small.toJPEG(82)
-          );
-
-          hasCover = true;
+        try {
+          const img = nativeImage.createFromBuffer(Buffer.from(pic.data));
+          if (!img.isEmpty()) {
+            const small = img.getSize().width > 400
+              ? img.resize({ width: 400, quality: 'good' })
+              : img;
+            await fsp.writeFile(path.join(coverDir(), id + '.jpg'), small.toJPEG(82));
+            hasCover = true;
+          }
+        } catch {
+          // Invalid or unsupported artwork must not prevent importing the audio.
         }
       }
 
+      allowedMediaPaths.add(mediaPathKey(f));
       added.push({
         id,
         path: f,
@@ -208,7 +285,7 @@ async function scan(targets, known) {
 
   return {
     added,
-    found: files.length
+    found: uniqueFiles.length
   };
 }
 
@@ -248,9 +325,11 @@ async function scanVideos(targets, known) {
     }
   }
 
-  const knownIds = new Set(known || []);
+  const uniqueFiles = [...new Map(files.map((file) => [path.resolve(file).toLowerCase(), file])).values()];
+  const knownIds = new Set(Array.isArray(known) ? known : []);
 
-  const added = files
+  uniqueFiles.forEach((file) => allowedMediaPaths.add(mediaPathKey(file)));
+  const added = uniqueFiles
     .filter((file) => !knownIds.has(idFor(file)))
     .map((file) => ({
       id: idFor(file),
@@ -265,28 +344,37 @@ async function scanVideos(targets, known) {
 
   return {
     added,
-    found: files.length
+    found: uniqueFiles.length
   };
 }
 
 // APPLICATION STATE
 
+let stateWriteChain = Promise.resolve();
+let isWiping = false;
+
 ipcMain.handle('state:load', async () => {
   try {
-    return JSON.parse(await fsp.readFile(stateFile(), 'utf8'));
+    await stateWriteChain.catch(() => {});
+    const state = JSON.parse(await fsp.readFile(stateFile(), 'utf8'));
+    rememberStateMedia(state);
+    return state;
   } catch {
     return null;
   }
 });
 
 ipcMain.handle('state:save', async (_e, data) => {
-  await fsp.mkdir(userData(), { recursive: true });
-
-  const tmp = stateFile() + '.tmp';
-
-  await fsp.writeFile(tmp, JSON.stringify(data));
-  await fsp.rename(tmp, stateFile());
-
+  if (isWiping) return false;
+  const serialized = JSON.stringify(data);
+  const write = stateWriteChain.catch(() => {}).then(async () => {
+    await fsp.mkdir(userData(), { recursive: true });
+    const tmp = stateFile() + '.tmp';
+    await fsp.writeFile(tmp, serialized);
+    await fsp.rename(tmp, stateFile());
+  });
+  stateWriteChain = write;
+  await write;
   return true;
 });
 
@@ -330,11 +418,15 @@ ipcMain.handle('dialog:video-files', async () => {
 // AUDIO AND VIDEO SCAN HANDLERS
 
 ipcMain.handle('scan', (_e, targets, known) => {
-  return scan(targets, new Set(known));
+  const safeTargets = Array.isArray(targets) ? targets.filter((item) => typeof item === 'string' && item.length) : [];
+  const safeKnown = Array.isArray(known) ? known.filter((item) => typeof item === 'string') : [];
+  return scan(safeTargets, new Set(safeKnown));
 });
 
 ipcMain.handle('scan:videos', (_e, targets, known) => {
-  return scanVideos(targets, known);
+  const safeTargets = Array.isArray(targets) ? targets.filter((item) => typeof item === 'string' && item.length) : [];
+  const safeKnown = Array.isArray(known) ? known.filter((item) => typeof item === 'string') : [];
+  return scanVideos(safeTargets, safeKnown);
 });
 
 // OFFLINE AUDIO IMPORT
@@ -344,15 +436,23 @@ ipcMain.handle('offline:import', async () => {
   const coverSource = path.join(__dirname, 'resources', 'offline', 'covers');
   const targetDir = path.join(userData(), 'offline');
 
-  await fsp.mkdir(targetDir, { recursive: true });
-  await fsp.mkdir(coverDir(), { recursive: true });
-
   const names = [
     'nyxen_sample_01.wav',
     'nyxen_sample_02.wav',
     'nyxen_sample_03.wav'
   ];
+  const required = [
+    ...names.map((name) => path.join(audioDir, name)),
+    ...names.map((_, i) => path.join(coverSource, `nyxen_cover_0${i + 1}.png`))
+  ];
+  const missing = [];
+  for (const file of required) {
+    try { await fsp.access(file); } catch { missing.push(path.basename(file)); }
+  }
+  if (missing.length) return { available: false, missing };
 
+  await fsp.mkdir(targetDir, { recursive: true });
+  await fsp.mkdir(coverDir(), { recursive: true });
   const added = [];
 
   for (let i = 0; i < names.length; i++) {
@@ -444,22 +544,33 @@ ipcMain.handle('power:keep-awake', (_e, enabled) => {
 // WIPE APPLICATION DATA
 
 ipcMain.handle('wipe', async () => {
-  await fsp.rm(stateFile(), { force: true });
-  await fsp.rm(coverDir(), { recursive: true, force: true });
-  await fsp.rm(path.join(userData(), 'offline'), {
-    recursive: true,
-    force: true
-  });
-  await fsp.rm(fontDir(), { recursive: true, force: true });
-
-  return true;
+  isWiping = true;
+  try {
+    await stateWriteChain.catch(() => {});
+    if (keepAwakeId !== null) { powerSaveBlocker.stop(keepAwakeId); keepAwakeId = null; }
+    allowedMediaPaths.clear();
+    await fsp.rm(stateFile(), { force: true });
+    await fsp.rm(stateFile() + '.tmp', { force: true });
+    await fsp.rm(coverDir(), { recursive: true, force: true });
+    await fsp.rm(path.join(userData(), 'offline'), { recursive: true, force: true });
+    await fsp.rm(fontDir(), { recursive: true, force: true });
+    return true;
+  } finally {
+    isWiping = false;
+  }
 });
 
 // EXTERNAL LINKS
 
-ipcMain.handle('open-external', (_e, url) => {
-  if (/^https:\/\//.test(url)) {
-    shell.openExternal(url);
+ipcMain.handle('open-external', async (_e, value) => {
+  if (typeof value !== 'string') return false;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' || url.username || url.password) return false;
+    await shell.openExternal(url.toString());
+    return true;
+  } catch {
+    return false;
   }
 });
 
@@ -497,13 +608,7 @@ app.whenReady().then(() => {
           u.pathname.slice(1),
           'base64url'
         ).toString('utf8');
-
-        return withCors(
-          await net.fetch(
-            pathToFileURL(p).toString(),
-            { headers: req.headers }
-          )
-        );
+        return mediaResponse(req, p);
       }
     } catch {
       // Invalid or inaccessible resource.

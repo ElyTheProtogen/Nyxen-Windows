@@ -5,7 +5,7 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmt = (sec) => { sec = Math.max(0, Math.floor(sec || 0)); return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'); };
 const playsText = (n) => (n <= 0 ? 'Not played yet' : n === 1 ? 'Played 1 time' : `Played ${n} times`);
-const isGmail = (e) => /^[A-Za-z0-9._%+-]+@gmail\.com$/i.test((e || '').trim());
+const isEmail = (value) => { const email = (value || '').trim(); return !email || (email.includes('@') && email.lastIndexOf('.') > email.indexOf('@') + 1 && !/\s/.test(email)); };
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const b64url = (s) => btoa(String.fromCharCode(...new TextEncoder().encode(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const fileUrl = (p) => 'nyxen://file/' + b64url(p);
@@ -76,19 +76,117 @@ const REVERBS = [{ n: 'Off', s: 0.1, d: 8 }, { n: 'Small room', s: 0.6, d: 3 }, 
 
 /* ================= state ================= */
 const DEFAULT = () => ({
-  v: 2, profile: { name: '', email: '' }, tracks: [], videos: [], videoFolders: [], playlists: [], folders: [], nextPl: 1, lastScan: 0, firstDone: false, lyrics: {}, customThemes: [], customEq: {}, recentSearches: [],
+  v: 2, profile: { name: '', email: '' }, tracks: [], videos: [], videoFolders: [], playlists: [], folders: [], nextPl: 1, lastScan: 0, lastVideoScan: 0, firstDone: false, lyrics: {}, customThemes: [], customEq: {}, recentSearches: [],
   settings: { theme: 1, wallpaper: 0, cover: true, eqOn: true, gains: Array(10).fill(0), pre: 0, bass: 0, preset: 'Flat', rvPreset: 0, rvMix: 0.3, volume: 0.8, speed: 1, autoResume: false, rememberQueue: true, autoplaySimilar: false, buttonSounds: true, sleepFade: true, autoImport: true, keepAwake: false, mode: 'all', sort: 'title', asc: true, cat: 'tracks' },
   last: { id: null, pos: 0 }, savedQueue: [], savedQueueIndex: 0
 });
+function normalizeState(saved) {
+  const d = DEFAULT();
+  if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return d;
+  const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
+  const baseName = (value) => { const p = String(value || ''); return p.slice(Math.max(p.lastIndexOf('/'), p.lastIndexOf(String.fromCharCode(92))) + 1); };
+  const finite = (value, fallback, min = -Infinity, max = Infinity) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? clamp(n, min, max) : fallback;
+  };
+  const cleanTrack = (item) => {
+    if (!isObject(item) || typeof item.id !== 'string' || item.id.length !== 12 || ![...item.id].every((ch) => '0123456789abcdef'.includes(ch.toLowerCase())) || typeof item.path !== 'string' || !item.path.length) return null;
+    return {
+      ...item,
+      title: String(item.title || baseName(item.path) || 'Untitled'),
+      artist: String(item.artist || 'Unknown artist'),
+      album: String(item.album || 'Unknown album'),
+      genre: String(item.genre || 'Unknown genre'),
+      duration: finite(item.duration, 0, 0),
+      plays: Math.floor(finite(item.plays, 0, 0)),
+      last: finite(item.last, 0, 0),
+      added: finite(item.added, Date.now(), 0),
+      fav: !!item.fav,
+      cover: !!item.cover
+    };
+  };
+  const tracks = (Array.isArray(saved.tracks) ? saved.tracks : []).map(cleanTrack).filter(Boolean);
+  const videos = (Array.isArray(saved.videos) ? saved.videos : []).filter((item) => isObject(item) && typeof item.id === 'string' && item.id.length === 12 && [...item.id].every((ch) => '0123456789abcdef'.includes(ch.toLowerCase())) && typeof item.path === 'string' && item.path.length > 0).map((item) => ({
+    ...item,
+    title: String(item.title || item.path.split(/[\\\\/]/).pop() || 'Untitled video'),
+    added: finite(item.added, Date.now(), 0),
+    plays: Math.floor(finite(item.plays, 0, 0)),
+    last: finite(item.last, 0, 0),
+    fav: !!item.fav,
+    type: 'video'
+  }));
+  const playlists = (Array.isArray(saved.playlists) ? saved.playlists : []).filter((item) => isObject(item) && typeof item.id === 'string' && item.id.startsWith('p') && Number.isInteger(Number(item.id.slice(1))) && Number(item.id.slice(1)) > 0).map((item) => ({
+    id: item.id,
+    name: String(item.name || 'Untitled playlist'),
+    ids: Array.isArray(item.ids) ? item.ids.filter((id) => typeof id === 'string') : []
+  }));
+  const settings = { ...d.settings, ...(isObject(saved.settings) ? saved.settings : {}) };
+  settings.gains = Array.isArray(settings.gains) && settings.gains.length === 10
+    ? settings.gains.map((value) => finite(value, 0, -12, 12))
+    : d.settings.gains.slice();
+  settings.theme = Math.floor(finite(settings.theme, d.settings.theme, 0));
+  settings.wallpaper = Math.floor(finite(settings.wallpaper, 0, 0, 8));
+  settings.volume = finite(settings.volume, d.settings.volume, 0, 1);
+  settings.speed = finite(settings.speed, 1, 0.5, 2);
+  settings.pre = finite(settings.pre, 0, -12, 12);
+  settings.bass = finite(settings.bass, 0, 0, 12);
+  settings.rvMix = finite(settings.rvMix, 0.3, 0, 1);
+  settings.rvPreset = Math.floor(finite(settings.rvPreset, 0, 0, REVERBS.length - 1));
+  settings.mode = ['all', 'one', 'order', 'shuffle'].includes(settings.mode) ? settings.mode : 'all';
+  settings.sort = ['title', 'artist', 'album', 'duration', 'added', 'plays'].includes(settings.sort) ? settings.sort : 'title';
+  settings.cat = ['tracks', 'albums', 'artists', 'genres', 'favorites'].includes(settings.cat) ? settings.cat : 'tracks';
+  for (const key of ['cover', 'eqOn', 'autoResume', 'rememberQueue', 'autoplaySimilar', 'buttonSounds', 'sleepFade', 'autoImport', 'keepAwake', 'asc']) {
+    settings[key] = !!settings[key];
+  }
+  settings.preset = typeof settings.preset === 'string' ? settings.preset.slice(0, 30) : 'Flat';
+  settings.customFontName = typeof settings.customFontName === 'string' ? settings.customFontName.slice(0, 80) : '';
+  settings.customFontFile = typeof settings.customFontFile === 'string' && /^[A-Za-z0-9_-]{1,60}\.(ttf|otf)$/i.test(settings.customFontFile) ? settings.customFontFile : '';
+  const customEq = {};
+  if (isObject(saved.customEq)) {
+    for (const [name, values] of Object.entries(saved.customEq)) {
+      if (!['__proto__', 'prototype', 'constructor'].includes(name) && Array.isArray(values) && values.length === 10 && values.every((v) => Number.isFinite(Number(v)))) {
+        customEq[name.slice(0, 30)] = values.map((v) => finite(v, 0, -12, 12));
+      }
+    }
+  }
+  return {
+    ...d,
+    ...saved,
+    profile: {
+      name: typeof saved.profile?.name === 'string' ? saved.profile.name : '',
+      email: typeof saved.profile?.email === 'string' ? saved.profile.email : ''
+    },
+    tracks,
+    videos,
+    videoFolders: Array.isArray(saved.videoFolders) ? saved.videoFolders.filter((item) => typeof item === 'string') : [],
+    playlists,
+    folders: Array.isArray(saved.folders) ? saved.folders.filter((item) => typeof item === 'string') : [],
+    nextPl: Math.max(1, Math.floor(finite(saved.nextPl, 1, 1))),
+    lastScan: finite(saved.lastScan, 0, 0),
+    lastVideoScan: finite(saved.lastVideoScan, 0, 0),
+    firstDone: !!saved.firstDone,
+    lyrics: isObject(saved.lyrics) ? Object.fromEntries(Object.entries(saved.lyrics).filter(([id, value]) => typeof id === 'string' && typeof value === 'string')) : {},
+    customThemes: Array.isArray(saved.customThemes) ? saved.customThemes.filter((theme) => isObject(theme) && typeof theme.n === 'string' && typeof theme.a === 'string' && /^#[0-9a-f]{6}$/i.test(theme.a) && Array.isArray(theme.g) && theme.g.length === 3 && theme.g.every((color) => typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color))).map((theme) => ({ ...theme, n: theme.n.slice(0, 24) })) : [],
+    customEq,
+    recentSearches: Array.isArray(saved.recentSearches) ? saved.recentSearches.filter((item) => typeof item === 'string').slice(0, 50) : [],
+    settings,
+    last: {
+      id: typeof saved.last?.id === 'string' ? saved.last.id : null,
+      pos: finite(saved.last?.pos, 0, 0)
+    },
+    savedQueue: Array.isArray(saved.savedQueue) ? saved.savedQueue.filter((id) => typeof id === 'string') : [],
+    savedQueueIndex: Math.max(0, Math.floor(finite(saved.savedQueueIndex, 0, 0)))
+  };
+}
 let S = DEFAULT();
 let byId = new Map();
 const reindex = () => { byId = new Map(S.tracks.map((t) => [t.id, t])); };
 const track = (id) => byId.get(id);
 let saveTimer = 0;
-const save = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => window.nyxen.saveState(S), 500); };
+const save = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => { Promise.resolve(window.nyxen.saveState(S)).catch(() => toast('Could not save NyxenPlayer data')); }, 500); };
 let toastT = 0;
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 3200); }
-const signedIn = () => S.profile.name && isGmail(S.profile.email);
+const signedIn = () => !!S.profile.name;
 document.addEventListener('error', (e) => { if (e.target && e.target.tagName === 'IMG') e.target.remove(); }, true);
 
 /* ================= audio engine (real Web Audio effects) ================= */
@@ -132,7 +230,7 @@ function applyFx() {
 
 /* ================= queue & playback ================= */
 let Q = { ids: [], i: -1, orig: null };
-let cur = null, counted = false, touched = false, seeking = false, resumePos = 0, lastPosSave = 0;
+let cur = null, counted = false, touched = false, seeking = false, resumePos = 0, lastPosSave = 0, errorSkipTimer = 0;
 
 function shuffleQueue() {
   const c = Q.ids[Q.i]; Q.orig = Q.ids.slice();
@@ -149,7 +247,9 @@ function playIds(list, i = 0) {
 }
 function loadCurrent(autoplay) {
   const t = track(Q.ids[Q.i]); if (!t) return;
+  clearTimeout(errorSkipTimer); errorSkipTimer = 0;
   cur = t; counted = touched = false;
+  audio.playbackRate = S.settings.speed || 1;
   audio.src = fileUrl(t.path);
   S.last.id = t.id; S.last.pos = 0; S.savedQueue = Q.ids.slice(); S.savedQueueIndex = Q.i; save();
   applyCoverAccent(); updatePlayerUI(); renderQueue();
@@ -157,14 +257,37 @@ function loadCurrent(autoplay) {
 }
 async function play() {
   if (!cur) return;
+  const video = $('#nyxen-video');
+  if (video && !video.paused) video.pause();
   try { await ac.resume(); await audio.play(); } catch { toast('This file cannot be played. It may have moved or use an unsupported format.'); }
 }
 function toggle() { if (!cur) return; if (audio.paused) play(); else audio.pause(); }
+function syncKeepAwake() {
+  if (window.nyxen?.setKeepAwake) window.nyxen.setKeepAwake(!!S.settings.keepAwake && !audio.paused && !audio.ended).catch(() => {});
+}
 function next(manual = true) {
   if (!Q.ids.length) return;
   let i = Q.i + 1;
   if (i >= Q.ids.length) {
-    if (S.settings.mode === 'order') { audio.pause(); audio.currentTime = 0; return; }
+    if (S.settings.mode === 'order') {
+      if (S.settings.autoplaySimilar && cur) {
+        const current = cur;
+        const candidates = S.tracks
+          .filter((t) => t.id !== current.id && !Q.ids.includes(t.id) &&
+            ((current.artist && t.artist === current.artist) || (current.genre && t.genre === current.genre)))
+          .sort((a, b) => {
+            const score = (t) => (t.artist === current.artist ? 2 : 0) + (t.genre === current.genre ? 1 : 0);
+            return score(b) - score(a) || (a.plays || 0) - (b.plays || 0);
+          });
+        if (candidates.length) {
+          Q.ids.push(candidates[0].id);
+          Q.i++;
+          loadCurrent(true);
+          return;
+        }
+      }
+      audio.pause(); audio.currentTime = 0; return;
+    }
     if (S.settings.mode === 'shuffle') { const all = (Q.orig || Q.ids).slice(); Q = { ids: all, i: Math.floor(Math.random() * all.length), orig: null }; shuffleQueue(); i = 0; }
     else i = 0;
   }
@@ -185,9 +308,10 @@ const MODES = ['all', 'one', 'order', 'shuffle'];
 const MODE_ICON = { all: 'repeat', one: 'repeat1', order: 'order', shuffle: 'shuffle' };
 const MODE_NAME = { all: 'Repeat all', one: 'Repeat one', order: 'In order', shuffle: 'Shuffle' };
 
-audio.addEventListener('play', () => { document.body.classList.add('playing'); updatePlayerUI(); });
-audio.addEventListener('pause', () => { document.body.classList.remove('playing'); if (cur) { S.last.pos = audio.currentTime; save(); } updatePlayerUI(); });
+audio.addEventListener('play', () => { document.body.classList.add('playing'); syncKeepAwake(); updatePlayerUI(); });
+audio.addEventListener('pause', () => { document.body.classList.remove('playing'); syncKeepAwake(); if (cur) { S.last.pos = audio.currentTime; save(); } updatePlayerUI(); });
 audio.addEventListener('ended', () => {
+  syncKeepAwake();
   if(sleepTrack){sleepTrack=false;audio.pause();toast('Sleep timer finished');if(V.page==='settings')render();return;}
   if (S.settings.mode === 'one') { audio.currentTime = 0; counted = touched = false; play(); } else next(false);
 });
@@ -207,10 +331,18 @@ audio.addEventListener('loadedmetadata', () => {
 audio.addEventListener('durationchange', updateProgress);
 audio.addEventListener('seeking', updateProgress);
 audio.addEventListener('seeked', updateProgress);
-audio.addEventListener('error', () => { if (cur) { toast('Cannot play "' + cur.title + '". Skipping.'); if (Q.ids.length > 1) setTimeout(() => next(true), 600); } });
+audio.addEventListener('error', () => {
+  if (!cur) return;
+  const failedId = cur.id;
+  toast('Cannot play "' + cur.title + '". Skipping.');
+  clearTimeout(errorSkipTimer);
+  if (Q.ids.length > 1) errorSkipTimer = setTimeout(() => {
+    if (cur && cur.id === failedId && audio.error) next(true);
+  }, 600);
+});
 audio.addEventListener('timeupdate', () => {
   if (!cur) return;
-  const t = audio.currentTime, d = audio.duration || cur.duration || 0;
+  const t = audio.currentTime, d = mediaDuration();
   if (!touched && t >= 3) { touched = true; cur.last = Date.now(); save(); }
   if (!counted && t >= Math.min(d / 2 || 30, 30)) {
     counted = true; cur.plays++; cur.last = Date.now(); save();
@@ -344,7 +476,7 @@ const slider = (id, label, min, max, step, val, unit) => `<div class="split" sty
 function pageStudio() {
   const s = S.settings;
   return `<div class="page"><div class="split"><div class="grow"><h1>Audio Studio</h1><div class="sub">${s.eqOn ? 'Effects on · ' + esc(s.preset) : 'Effects off'}</div></div><button class="btn ${s.eqOn ? '' : 'ghost'}" data-act="eq-toggle">${svg('power', 18)} ${s.eqOn ? 'On' : 'Off'}</button></div>
-<div class="toolbar">${Object.keys(EQ_PRESETS).map((n) => `<button class="chip ${s.preset === n ? 'on' : ''}" data-act="eq-preset" data-n="${n}">${n}</button>`).join('')}</div>
+<div class="toolbar">${Object.keys(EQ_PRESETS).map((n) => `<button class="chip ${s.preset === n ? 'on' : ''}" data-act="eq-preset" data-n="${esc(n)}">${esc(n)}</button>`).join('')}</div>
 <div class="glass"><canvas class="viz" id="viz2"></canvas><div class="eq">${BANDS.map((f, i) => `<div><span>${s.gains[i] > 0 ? '+' : ''}${s.gains[i]}</span><input class="v" type="range" min="-12" max="12" step="0.5" value="${s.gains[i]}" data-band="${i}"><span>${f >= 1000 ? f / 1000 + 'k' : f}</span></div>`).join('')}</div></div>
 <div class="glass"><h3>Tone</h3>${slider('pre', 'Preamp', -12, 12, 0.5, s.pre, ' dB')}${slider('bass', 'Bass boost', 0, 12, 0.5, s.bass, ' dB')}</div>
 <div class="glass"><h3>Reverb</h3><div class="toolbar">${REVERBS.map((r, i) => `<button class="chip ${s.rvPreset === i ? 'on' : ''}" data-act="rv" data-i="${i}">${r.n}</button>`).join('')}</div>${slider('rvmix', 'Wet / dry mix', 0, 1, 0.05, s.rvMix, '')}</div>
@@ -364,7 +496,7 @@ function pageStats() {
 const ABOUT = 'NyxenPlayer is a music player built around one simple idea: your music, your way. It plays the songs you already own, whether they are MP3, M4A, OGG, WAV or FLAC files stored on your computer, and wraps them in a fast, dark and animated design with gradient themes and a real sound studio.\n\nYour music never leaves your computer. There are no ads, no tracking and no servers. Your playlists, favorites, play counts and settings are stored only on this device, and you can delete everything at any time in Settings.\n\nMade by: [your name]    Contact: your-email@gmail.com';
 let sleepMin = 0, sleepEnd = 0, sleepTimer = 0, sleepTrack = false;
 function pageSettings() {
-  const th = THEMES.map((t, i) => `<div class="sw ${S.settings.theme === i ? 'on' : ''}" data-act="theme" data-i="${i}"><i style="background:linear-gradient(180deg,${t.g.join(',')})"></i>${t.n}</div>`).join('');
+  const th = THEMES.map((t, i) => `<div class="sw ${S.settings.theme === i ? 'on' : ''}" data-act="theme" data-i="${i}"><i style="background:linear-gradient(180deg,${t.g.join(',')})"></i>${esc(t.n)}</div>`).join('');
   const wallpapers = Array.from({length:8},(_,i)=>`<button class="wallpaper ${S.settings.wallpaper===i+1?'on':''}" data-act="wallpaper" data-i="${i+1}"><img src="../resources/offline/wallpapers/nyxen_wallpaper_${String(i+1).padStart(2,'0')}.png"><span>${i+1}</span></button>`).join('');
   const toggle = (key,label,desc) => `<div class="setting-row"><div><b>${label}</b><small>${desc}</small></div><button class="chip ${S.settings[key]?'on':''}" data-act="setting-toggle" data-key="${key}">${S.settings[key]?'On':'Off'}</button></div>`;
   return `<div class="page"><h1>Settings</h1>
@@ -397,10 +529,10 @@ function updateProgress() {
   const d = mediaDuration();
   const t = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
   const safeTime = d ? clamp(t, 0, d) : 0;
-  $('.tcur').forEach((el) => { el.textContent = fmt(safeTime); });
-  $('.tdur').forEach((el) => { el.textContent = fmt(d); });
+  $$('.tcur').forEach((el) => { el.textContent = fmt(safeTime); });
+  $$('.tdur').forEach((el) => { el.textContent = fmt(d); });
   if (!seeking) {
-    $('.seekin').forEach((el) => {
+    $$('.seekin').forEach((el) => {
       const p = d ? clamp(safeTime / d, 0, 1) * 100 : 0;
       el.value = String(Math.round(p * 10));
       el.style.setProperty('--p', p + '%');
@@ -493,10 +625,10 @@ function pickPlaylist(toAdd) {
 function greet(first) { const n = S.profile.name; toast(first || !S.firstDone ? `Welcome to NyxenPlayer, ${n}!` : `${greeting()}, ${n}`); S.firstDone = true; save(); }
 function showWelcome() {
   const w = $('#welcome'); w.classList.remove('hidden');
-  w.innerHTML = `<div class="dialog" style="text-align:center"><img class="logo-big" src="logo.png" alt=""><h2 style="margin-top:12px">Welcome to NyxenPlayer</h2><div class="sub">Your music, your way. Everything stays on this computer.</div><input class="field" id="w-name" placeholder="What should we call you?" value="${esc(S.profile.name)}"><input class="field" id="w-mail" placeholder="Gmail address (required)" value="${esc(S.profile.email)}"><div class="err" id="w-err"></div><div class="sub" style="font-size:11px">Saved only on this computer. Google sign-in is not set up in this version, so the address is only checked for format.</div><div class="actions"><button class="btn" id="w-go" style="width:100%;justify-content:center">Get started</button></div></div>`;
+  w.innerHTML = `<div class="dialog" style="text-align:center"><img class="logo-big" src="logo.png" alt=""><h2 style="margin-top:12px">Welcome to NyxenPlayer</h2><div class="sub">Your music, your way. Everything stays on this computer.</div><input class="field" id="w-name" placeholder="What should we call you?" value="${esc(S.profile.name)}"><input class="field" id="w-mail" placeholder="Email address (optional)" value="${esc(S.profile.email)}"><div class="err" id="w-err"></div><div class="sub" style="font-size:11px">Saved only on this computer. Email is optional and stored only on this computer. Google sign-in is not configured in this version.</div><div class="actions"><button class="btn" id="w-go" style="width:100%;justify-content:center">Get started</button></div></div>`;
   const submit = () => {
     const name = $('#w-name').value.trim() || 'Friend', mail = $('#w-mail').value.trim();
-    if (!isGmail(mail)) { $('#w-err').textContent = 'Enter a valid @gmail.com address'; return; }
+    if (!isEmail(mail)) { $('#w-err').textContent = 'Enter a valid email address or leave it blank'; return; }
     S.profile = { name, email: mail }; save(); w.classList.add('hidden'); w.innerHTML = ''; greet(!S.firstDone); render();
   };
   $('#w-go').addEventListener('click', submit); $('#w-mail').addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
@@ -507,6 +639,7 @@ let importing = false;
 let videoImporting = false;
 let currentVideo = null;
 let videoCounted = false;
+let lastVideoSave = 0;
 async function importTargets(targets, folders, silent) {
   if (importing || !targets.length) return; importing = true; $('#sidefoot').textContent = 'Scanning...';
   try {
@@ -514,12 +647,12 @@ async function importTargets(targets, folders, silent) {
     r.added.forEach((t) => S.tracks.push(t));
     folders.forEach((f) => { if (!S.folders.includes(f)) S.folders.push(f); });
     S.lastScan = Date.now(); reindex(); save();
-    if (r.added.length) toast(`Added ${r.added.length} new songs`); else if (!silent) toast('No new songs found');
+    if (!silent) { if (r.added.length) toast(`Added ${r.added.length} new songs`); else toast('No new songs found'); }
     render();
   } catch { toast('Import failed'); }
   importing = false; $('#sidefoot').textContent = '';
 }
-async function importVideoTargets(targets, folders = []) {
+async function importVideoTargets(targets, folders = [], silent = false) {
   if (videoImporting || !targets.length) return;
   videoImporting = true;
   $('#sidefoot').textContent = 'Scanning videos...';
@@ -529,9 +662,10 @@ async function importVideoTargets(targets, folders = []) {
     r.added.forEach(v => S.videos.push(v));
     S.videoFolders = S.videoFolders || [];
     folders.forEach(f => { if (!S.videoFolders.includes(f)) S.videoFolders.push(f); });
+    S.lastVideoScan = Date.now();
     save();
     render();
-    toast(r.added.length ? 'Added ' + r.added.length + ' videos' : 'No new videos found');
+    if (!silent) toast(r.added.length ? 'Added ' + r.added.length + ' videos' : 'No new videos found');
   } catch {
     toast('Video import failed');
   } finally {
@@ -562,6 +696,7 @@ function closeVideoPlayer() {
 }
 function initVideoPlayer() {
   const player = $('#nyxen-video');
+  player.addEventListener('play', () => { if (!audio.paused) audio.pause(); });
   $('#video-back').addEventListener('click', closeVideoPlayer);
   $('#video-fullscreen').addEventListener('click', async () => {
     try {
@@ -572,12 +707,13 @@ function initVideoPlayer() {
   player.addEventListener('timeupdate', () => {
     if (!currentVideo) return;
     if (player.currentTime >= 3) {
-      currentVideo.last = Date.now();
+      const now = Date.now();
+      currentVideo.last = now;
       if (!videoCounted && player.currentTime >= Math.min((player.duration || 0) / 2 || 30, 30)) {
         currentVideo.plays = (currentVideo.plays || 0) + 1;
         videoCounted = true;
       }
-      save();
+      if (now - lastVideoSave >= 5000) { lastVideoSave = now; save(); }
     }
   });
   player.addEventListener('error', () => {
@@ -587,16 +723,39 @@ function initVideoPlayer() {
 function enqueue(id, afterCurrent) {
   if (!Q.ids.length) { playIds([id], 0); return; }
   if (afterCurrent) Q.ids.splice(Q.i + 1, 0, id); else Q.ids.push(id);
-  if (Q.orig) Q.orig.push(id);
+  if (Q.orig) {
+    const currentIndex = Q.orig.indexOf(Q.ids[Q.i]);
+    Q.orig.splice(afterCurrent && currentIndex >= 0 ? currentIndex + 1 : Q.orig.length, 0, id);
+  }
   S.savedQueue=Q.ids.slice();S.savedQueueIndex=Q.i;save();
   toast(afterCurrent ? 'Will play next' : 'Added to queue'); renderQueue();
 }
 function removeTrack(id) {
-  S.tracks = S.tracks.filter((t) => t.id !== id); S.playlists.forEach((p) => { p.ids = p.ids.filter((x) => x !== id); });
-  const wasCur = cur && cur.id === id; Q.ids = Q.ids.filter((x) => x !== id); S.savedQueue=Q.ids.slice(); if (Q.orig) Q.orig = Q.orig.filter((x) => x !== id);
-  reindex(); save();
-  if (wasCur) { audio.pause(); cur = null; audio.removeAttribute('src'); Q.i = Math.min(Q.i, Q.ids.length - 1); updatePlayerUI(); }
-  render(); renderQueue();
+  S.tracks = S.tracks.filter((t) => t.id !== id);
+  S.playlists.forEach((p) => { p.ids = p.ids.filter((x) => x !== id); });
+  const wasCur = !!(cur && cur.id === id);
+  const removedBeforeCurrent = Q.ids.slice(0, Math.max(0, Q.i)).filter((queuedId) => queuedId === id).length;
+  Q.ids = Q.ids.filter((queuedId) => queuedId !== id);
+  if (Q.orig) Q.orig = Q.orig.filter((queuedId) => queuedId !== id);
+  Q.i = Math.max(-1, Q.i - removedBeforeCurrent);
+  if (wasCur) {
+    clearTimeout(errorSkipTimer); errorSkipTimer = 0;
+    cur = null;
+    counted = touched = false;
+    resumePos = 0;
+    S.last = { id: null, pos: 0 };
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+    Q.i = Q.ids.length ? clamp(Q.i, 0, Q.ids.length - 1) : -1;
+  }
+  S.savedQueue = Q.ids.slice();
+  S.savedQueueIndex = Q.i;
+  reindex();
+  save();
+  updatePlayerUI();
+  render();
+  renderQueue();
 }
 function movePl(pid, i, d) { const p = S.playlists.find((x) => x.id === pid); const j = i + d; if (!p || j < 0 || j >= p.ids.length) return; [p.ids[i], p.ids[j]] = [p.ids[j], p.ids[i]]; save(); render(); }
 function setVolume(v) { S.settings.volume = clamp(v, 0, 1); muted = false; applyFx(); save(); renderBar(); updateProgress(); }
@@ -606,12 +765,12 @@ function setSleep(m) {
     sleepTimer = setInterval(() => {
       const left = sleepEnd - Date.now();
       if (left <= 0) { clearInterval(sleepTimer); audio.pause(); sleepMin = 0; sleepEnd = 0; applyFx(); toast('Sleep timer finished'); if (V.page === 'settings') render(); }
-      else if (left < 20000 && nodes.master) nodes.master.gain.value = S.settings.volume * (S.settings.sleepFade ? left / 20000 : 1);
+      else if (left < 20000 && nodes.master) nodes.master.gain.value = muted ? 0 : S.settings.volume * (S.settings.sleepFade ? left / 20000 : 1);
     }, 500);
     toast(`Sleep timer: ${m} min`);
   } else toast('Sleep timer off');
 }
-function setSleepEndTrack() { clearInterval(sleepTimer); sleepMin=0; sleepEnd=0; sleepTrack=true; toast('Sleep timer set for end of track'); if(V.page==='settings')render(); }
+function setSleepEndTrack() { clearInterval(sleepTimer); sleepMin=0; sleepEnd=0; sleepTrack=true; applyFx(); toast('Sleep timer set for end of track'); if(V.page==='settings')render(); }
 function applyCustomFont() {
   const file=S.settings.customFontFile;
   let style=$('#nyxen-font-style');
@@ -639,7 +798,7 @@ function renderLyrics(text) {
   for(const raw of text.split(/\r?\n/)){
     const matches=[...raw.matchAll(/\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]/g)];
     const lyric=raw.replace(/\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]/g,'').trim();
-    if(matches.length){for(const m of matches){const frac=Number(('0.'+(m[3]||'0')).slice(0,5));const ms=(Number(m[1])*60+Number(m[2])+frac)*1000;lines.push({ms,text:lyric});}}
+    if(matches.length){for(const m of matches){const fractionMs=m[3]?Number(m[3].padEnd(3,'0').slice(0,3)):0;const ms=(Number(m[1])*60+Number(m[2]))*1000+fractionMs;lines.push({ms,text:lyric});}}
     else if(raw.trim()) lines.push({ms:null,text:raw});
   }
   if(!lines.some(x=>x.ms!==null)) return lines.map(x=>`<span class="lyrics-line">${esc(x.text)}</span>`).join('');
@@ -709,7 +868,24 @@ const ACT = {
   'np-close': () => $('#np').classList.add('off'),
   'queue-toggle': () => { const q = $('#queue'); q.classList.toggle('off'); renderQueue(); },
   'q-jump': (d) => { Q.i = +d.i; loadCurrent(true); },
-  'q-rm': (d, e) => { e.stopPropagation(); const i = +d.i; Q.ids.splice(i, 1); S.savedQueue=Q.ids.slice(); if (i < Q.i) Q.i--; else if (i === Q.i) { if (Q.ids.length) { Q.i = Math.min(Q.i, Q.ids.length - 1); loadCurrent(true); } else { audio.pause(); } } S.savedQueueIndex=Q.i;save();renderQueue(); },
+  'q-rm': (d, e) => {
+    e.stopPropagation();
+    const i = +d.i;
+    if (!Number.isInteger(i) || i < 0 || i >= Q.ids.length) return;
+    const [removedId] = Q.ids.splice(i, 1);
+    if (Q.orig) { const oi = Q.orig.indexOf(removedId); if (oi >= 0) Q.orig.splice(oi, 1); }
+    if (i < Q.i) Q.i--;
+    else if (i === Q.i) {
+      if (Q.ids.length) { Q.i = Math.min(Q.i, Q.ids.length - 1); loadCurrent(true); }
+      else {
+        Q.i = -1; cur = null; counted = touched = false; resumePos = 0;
+        S.last = { id: null, pos: 0 };
+        audio.pause(); audio.removeAttribute('src'); audio.load(); updatePlayerUI();
+      }
+    }
+    S.savedQueue = Q.ids.slice(); S.savedQueueIndex = Q.i;
+    save(); renderQueue();
+  },
   'eq-toggle': () => { S.settings.eqOn = !S.settings.eqOn; applyFx(); save(); render(); },
   'eq-preset': (d) => { S.settings.preset = d.n; S.settings.gains = EQ_PRESETS[d.n].slice(); applyFx(); save(); render(); },
   rv: (d) => { S.settings.rvPreset = +d.i; setReverb(); applyFx(); save(); render(); },
@@ -735,10 +911,14 @@ const ACT = {
     S.customEq=S.customEq||{};S.customEq[name]=S.settings.gains.slice();EQ_PRESETS[name]=S.settings.gains.slice();
     S.settings.preset=name;save();render();toast('Equalizer preset saved');
   },
-  'setting-toggle': (d) => { const k=d.key; S.settings[k]=!S.settings[k]; if(k==='rememberQueue'&&!S.settings[k]){S.savedQueue=[];S.savedQueueIndex=0;} if(k==='keepAwake')window.nyxen.setKeepAwake(S.settings.keepAwake); save(); render(); },
+  'setting-toggle': (d) => { const k=d.key; S.settings[k]=!S.settings[k]; if(k==='rememberQueue'&&!S.settings[k]){S.savedQueue=[];S.savedQueueIndex=0;} if(k==='keepAwake')syncKeepAwake(); save(); render(); },
   'offline-pack': async () => {
     try {
       const items = await window.nyxen.importOfflinePack();
+      if (!Array.isArray(items)) {
+        toast('Offline soundscapes are unavailable: required audio or cover files are missing from this build.');
+        return;
+      }
       const known = new Set(S.tracks.map(t=>t.id));
       const fresh = items.filter(x=>!known.has(x.id));
       if(!fresh.length){toast('Offline soundscapes are already in your library');return;}
@@ -756,7 +936,11 @@ const ACT = {
   'sign-out': () => { S.profile = { name: '', email: '' }; save(); showWelcome(); },
   wipe: async () => {
     if (!await confirmBox('Delete all data?', 'This removes your library, playlists, favorites, play counts, settings and profile from NyxenPlayer. Your music files are not touched.', 'Delete')) return;
-    await window.nyxen.wipe(); audio.pause(); audio.removeAttribute('src'); cur = null; Q = { ids: [], i: -1, orig: null };
+    clearTimeout(saveTimer); saveTimer = 0;
+    cur = null; Q = { ids: [], i: -1, orig: null }; counted = touched = false; resumePos = 0;
+    audio.pause(); audio.removeAttribute('src'); audio.load();
+    await window.nyxen.wipe();
+    clearTimeout(saveTimer); saveTimer = 0;
     S = DEFAULT(); reindex(); applyTheme(); applyFx(); setReverb(); updatePlayerUI(); render(); showWelcome();
   }
 };
@@ -769,7 +953,7 @@ const MENU = {
 function uiClick() {
   if (!S.settings.buttonSounds || !ac) return;
   try {
-    ac.resume();
+    ac.resume().catch(() => {});
     const osc = ac.createOscillator(), gain = ac.createGain();
     osc.type = 'sine'; osc.frequency.value = 760;
     gain.gain.setValueAtTime(.018, ac.currentTime);
@@ -779,6 +963,7 @@ function uiClick() {
   } catch {}
 }
 document.addEventListener('click', (e) => {
+  if (e.target.closest('button')) uiClick();
   const mb = e.target.closest('#menu [data-m]');
   if (mb) { const id = $('#menu').dataset.id; $('#menu').classList.add('hidden'); MENU[mb.dataset.m](id); return; }
   if (!e.target.closest('#menu')) $('#menu').classList.add('hidden');
@@ -810,7 +995,7 @@ document.addEventListener('input', (e) => {
   else if (t.classList && t.classList.contains('seekin')) {
     seeking = true;
     const d = mediaDuration();
-    if (d > 0) $('.tcur').forEach((el) => { el.textContent = fmt((clamp(Number(t.value) / 1000, 0, 1)) * d); });
+    if (d > 0) $$('.tcur').forEach((el) => { el.textContent = fmt((clamp(Number(t.value) / 1000, 0, 1)) * d); });
   }
 });
 document.addEventListener('change', (e) => {
@@ -829,6 +1014,7 @@ window.addEventListener('blur', () => {
 document.addEventListener('keydown', (e) => {
   const tag = (e.target.tagName || '').toLowerCase();
   if (e.key === 'Escape') { if (!$('#video-player').classList.contains('off')) closeVideoPlayer(); closeOverlays(); return; }
+  if (e.target.closest && e.target.closest('button, a, #nyxen-video, [contenteditable="true"]')) return;
   if (tag === 'input' || tag === 'select' || tag === 'textarea') { if(e.key==='Enter' && e.target.id==='q') rememberSearch(); return; }
   if (e.code === 'Space') { e.preventDefault(); toggle(); }
   else if (e.key === 'ArrowRight') { if (e.ctrlKey) next(true); else audio.currentTime += 5; }
@@ -841,11 +1027,11 @@ document.addEventListener('keydown', (e) => {
 /* ================= boot ================= */
 async function boot() {
   const saved = await window.nyxen.loadState();
-  if (saved) { const d = DEFAULT(); S = { ...d, ...saved, settings: { ...d.settings, ...saved.settings } }; }
+  S = normalizeState(saved);
   reindex();
   (S.customThemes||[]).forEach(t=>{if(t&&t.n&&t.a&&Array.isArray(t.g)&&!THEMES.some(x=>x.n===t.n&&x.a===t.a))THEMES.push(t);});
   Object.assign(EQ_PRESETS,S.customEq||{});
-  initAudio(); initVideoPlayer(); applyTheme(); applyWallpaper(); applyCustomFont(); window.nyxen.setKeepAwake(!!S.settings.keepAwake);
+  initAudio(); audio.playbackRate = S.settings.speed || 1; initVideoPlayer(); applyTheme(); applyWallpaper(); applyCustomFont(); syncKeepAwake();
   $('#nav').innerHTML = NAV.map(([p, n, ic]) => `<button class="navb" data-act="nav" data-page="${p}">${svg(ic, 22)}<span>${n}</span></button>`).join('');
   window.nyxen.onScanProgress((p) => { $('#sidefoot').textContent = `Scanning ${p.done} / ${p.total}...`; });
   window.nyxen.onCommand((c) => { if (c === 'toggle') toggle(); else if (c === 'next') next(true); else if (c === 'prev') prev(); else if (c === 'stop') audio.pause(); });
@@ -857,6 +1043,6 @@ async function boot() {
     cur = track(Q.ids[Q.i]) || lt; resumePos = S.last.pos || 0; audio.src = fileUrl(cur.path); audio.playbackRate=Number(S.settings.speed||1); applyCoverAccent();
   }
   updatePlayerUI(); render(); vizLoop();
-  if (!signedIn()) showWelcome(); else { greet(false); if(S.settings.autoResume && cur) play(); if (S.settings.autoImport && S.folders.length && Date.now() - S.lastScan > 300000) importTargets(S.folders, [], true); }
+  if (!signedIn()) showWelcome(); else { greet(false); if(S.settings.autoResume && cur) play(); if (S.settings.autoImport && S.folders.length && Date.now() - S.lastScan > 300000) importTargets(S.folders, [], true); if (S.settings.autoImport && Array.isArray(S.videoFolders) && S.videoFolders.length && Date.now() - (S.lastVideoScan || 0) > 300000) importVideoTargets(S.videoFolders, [], true); }
 }
 boot();
