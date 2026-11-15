@@ -945,7 +945,7 @@ const MENU = {
 function uiClick() {
   if (!S.settings.buttonSounds || !ac) return;
   try {
-    ac.resume();
+    ac.resume().catch(() => {});
     const osc = ac.createOscillator(), gain = ac.createGain();
     osc.type = 'sine'; osc.frequency.value = 760;
     gain.gain.setValueAtTime(.018, ac.currentTime);
