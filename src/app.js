@@ -90,7 +90,7 @@ function normalizeState(saved) {
     return Number.isFinite(n) ? clamp(n, min, max) : fallback;
   };
   const cleanTrack = (item) => {
-    if (!isObject(item) || typeof item.id !== 'string' || item.id.length !== 12 || ![...item.id].every((ch) => '0123456789abcdef'.includes(ch.toLowerCase())) || typeof item.path !== 'string') return null;
+    if (!isObject(item) || typeof item.id !== 'string' || item.id.length !== 12 || ![...item.id].every((ch) => '0123456789abcdef'.includes(ch.toLowerCase())) || typeof item.path !== 'string' || !item.path.length) return null;
     return {
       ...item,
       title: String(item.title || baseName(item.path) || 'Untitled'),
@@ -106,7 +106,7 @@ function normalizeState(saved) {
     };
   };
   const tracks = (Array.isArray(saved.tracks) ? saved.tracks : []).map(cleanTrack).filter(Boolean);
-  const videos = (Array.isArray(saved.videos) ? saved.videos : []).filter((item) => isObject(item) && typeof item.id === 'string' && item.id.length === 12 && [...item.id].every((ch) => '0123456789abcdef'.includes(ch.toLowerCase())) && typeof item.path === 'string').map((item) => ({
+  const videos = (Array.isArray(saved.videos) ? saved.videos : []).filter((item) => isObject(item) && typeof item.id === 'string' && item.id.length === 12 && [...item.id].every((ch) => '0123456789abcdef'.includes(ch.toLowerCase())) && typeof item.path === 'string' && item.path.length > 0).map((item) => ({
     ...item,
     title: String(item.title || item.path.split(/[\\\\/]/).pop() || 'Untitled video'),
     added: finite(item.added, Date.now(), 0),
@@ -696,6 +696,7 @@ function closeVideoPlayer() {
 }
 function initVideoPlayer() {
   const player = $('#nyxen-video');
+  player.addEventListener('play', () => { if (!audio.paused) audio.pause(); });
   $('#video-back').addEventListener('click', closeVideoPlayer);
   $('#video-fullscreen').addEventListener('click', async () => {
     try {
