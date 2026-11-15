@@ -721,36 +721,14 @@ async function googleOAuthSignIn() {
         .end('<!doctype html><html><head><meta charset="utf-8"><title>NyxenPlayer</title></head><body style="font:16px Segoe UI, sans-serif;background:#101014;color:#fff;padding:48px"><h2>Google sign-in complete</h2><p>You can close this tab and return to NyxenPlayer.</p></body></html>');
 
       try {
-        const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({
-            client_id: GOOGLE_DESKTOP_CLIENT_ID,
-            code,
-            code_verifier: verifier,
-            grant_type: 'authorization_code',
-            redirect_uri: redirectUri
-          })
-        });
-        const tokens = await tokenResponse.json();
-        if (!tokenResponse.ok || !tokens.access_token) {
-          throw new Error(tokens.error_description || 'Google could not complete sign-in.');
-        }
-
-        const profileResponse = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
-          headers: { Authorization: 'Bearer ' + tokens.access_token }
-        });
-        const profile = await profileResponse.json();
-        if (!profileResponse.ok || !profile.sub || !profile.email || profile.email_verified !== true) {
-          throw new Error('Google did not return a verified account profile.');
-        }
-        if (!tokens.id_token) {
-          throw new Error('Google did not return an identity token. Please try again.');
-        }
         const gateResponse = await fetch('https://nyxen-player-hoejp1qo9-nyxen-team.vercel.app/api/google-sign-in', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ idToken: tokens.id_token })
+          body: JSON.stringify({
+            authorizationCode: code,
+            codeVerifier: verifier,
+            redirectUri
+          })
         });
         const gate = await gateResponse.json().catch(() => ({}));
         if (!gateResponse.ok || !gate.customToken) {
@@ -765,7 +743,7 @@ async function googleOAuthSignIn() {
         }
         finish(null, {
           sub: String(firebaseUser.localId),
-          name: String(firebaseUser.displayName || profile.name || firebaseUser.email).slice(0, 120),
+          name: String(firebaseUser.displayName || gate.profile?.displayName || firebaseUser.email).slice(0, 120),
           email: String(firebaseUser.email).slice(0, 254),
           picture: typeof firebaseUser.photoUrl === 'string' && firebaseUser.photoUrl.startsWith('https://') ? firebaseUser.photoUrl : ''
         });
