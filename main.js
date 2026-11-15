@@ -43,6 +43,13 @@ const VIDEO_EXT = new Set([
 ]);
 
 let win = null;
+const allowedMediaPaths = new Set();
+const mediaPathKey = (value) => path.resolve(value).toLowerCase();
+function rememberStateMedia(state) {
+  for (const item of [...(Array.isArray(state?.tracks) ? state.tracks : []), ...(Array.isArray(state?.videos) ? state.videos : [])]) {
+    if (item && typeof item.path === 'string') allowedMediaPaths.add(mediaPathKey(item.path));
+  }
+}
 
 const userData = () => app.getPath('userData');
 const stateFile = () => path.join(userData(), 'nyxen-state.json');
@@ -185,6 +192,7 @@ async function scan(targets, known) {
         }
       }
 
+      allowedMediaPaths.add(mediaPathKey(f));
       added.push({
         id,
         path: f,
@@ -258,6 +266,7 @@ async function scanVideos(targets, known) {
   const uniqueFiles = [...new Map(files.map((file) => [path.resolve(file).toLowerCase(), file])).values()];
   const knownIds = new Set(Array.isArray(known) ? known : []);
 
+  uniqueFiles.forEach((file) => allowedMediaPaths.add(mediaPathKey(file)));
   const added = uniqueFiles
     .filter((file) => !knownIds.has(idFor(file)))
     .map((file) => ({
@@ -285,7 +294,9 @@ let isWiping = false;
 ipcMain.handle('state:load', async () => {
   try {
     await stateWriteChain.catch(() => {});
-    return JSON.parse(await fsp.readFile(stateFile(), 'utf8'));
+    const state = JSON.parse(await fsp.readFile(stateFile(), 'utf8'));
+    rememberStateMedia(state);
+    return state;
   } catch {
     return null;
   }
@@ -534,6 +545,9 @@ app.whenReady().then(() => {
           u.pathname.slice(1),
           'base64url'
         ).toString('utf8');
+        if (!allowedMediaPaths.has(mediaPathKey(p))) {
+          return new Response('forbidden', { status: 403 });
+        }
 
         return withCors(
           await net.fetch(
