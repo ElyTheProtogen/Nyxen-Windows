@@ -135,6 +135,12 @@ function normalizeState(saved) {
   settings.mode = ['all', 'one', 'order', 'shuffle'].includes(settings.mode) ? settings.mode : 'all';
   settings.sort = ['title', 'artist', 'album', 'duration', 'added', 'plays'].includes(settings.sort) ? settings.sort : 'title';
   settings.cat = ['tracks', 'albums', 'artists', 'genres', 'favorites'].includes(settings.cat) ? settings.cat : 'tracks';
+  for (const key of ['cover', 'eqOn', 'autoResume', 'rememberQueue', 'autoplaySimilar', 'buttonSounds', 'sleepFade', 'autoImport', 'keepAwake', 'asc']) {
+    settings[key] = !!settings[key];
+  }
+  settings.preset = typeof settings.preset === 'string' ? settings.preset.slice(0, 30) : 'Flat';
+  settings.customFontName = typeof settings.customFontName === 'string' ? settings.customFontName.slice(0, 80) : '';
+  settings.customFontFile = typeof settings.customFontFile === 'string' && /^[A-Za-z0-9_-]{1,60}\\.(ttf|otf)$/i.test(settings.customFontFile) ? settings.customFontFile : '';
   const customEq = {};
   if (isObject(saved.customEq)) {
     for (const [name, values] of Object.entries(saved.customEq)) {
