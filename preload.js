@@ -36,8 +36,6 @@ contextBridge.exposeInMainWorld('nyxen', {
   setKeepAwake: (enabled) =>
     ipcRenderer.invoke('power:keep-awake', !!enabled),
 
-  // Email and password authentication
-  emailAuth: (credentials) => ipcRenderer.invoke('email:auth', credentials),
 
   // External links
   openExternal: (u) =>
