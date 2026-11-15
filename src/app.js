@@ -243,6 +243,7 @@ function loadCurrent(autoplay) {
   const t = track(Q.ids[Q.i]); if (!t) return;
   clearTimeout(errorSkipTimer); errorSkipTimer = 0;
   cur = t; counted = touched = false;
+  audio.playbackRate = S.settings.speed || 1;
   audio.src = fileUrl(t.path);
   S.last.id = t.id; S.last.pos = 0; S.savedQueue = Q.ids.slice(); S.savedQueueIndex = Q.i; save();
   applyCoverAccent(); updatePlayerUI(); renderQueue();
@@ -250,6 +251,8 @@ function loadCurrent(autoplay) {
 }
 async function play() {
   if (!cur) return;
+  const video = $('#nyxen-video');
+  if (video && !video.paused) video.pause();
   try { await ac.resume(); await audio.play(); } catch { toast('This file cannot be played. It may have moved or use an unsupported format.'); }
 }
 function toggle() { if (!cur) return; if (audio.paused) play(); else audio.pause(); }
@@ -712,7 +715,10 @@ function initVideoPlayer() {
 function enqueue(id, afterCurrent) {
   if (!Q.ids.length) { playIds([id], 0); return; }
   if (afterCurrent) Q.ids.splice(Q.i + 1, 0, id); else Q.ids.push(id);
-  if (Q.orig) Q.orig.push(id);
+  if (Q.orig) {
+    const currentIndex = Q.orig.indexOf(Q.ids[Q.i]);
+    Q.orig.splice(afterCurrent && currentIndex >= 0 ? currentIndex + 1 : Q.orig.length, 0, id);
+  }
   S.savedQueue=Q.ids.slice();S.savedQueueIndex=Q.i;save();
   toast(afterCurrent ? 'Will play next' : 'Added to queue'); renderQueue();
 }
@@ -756,7 +762,7 @@ function setSleep(m) {
     toast(`Sleep timer: ${m} min`);
   } else toast('Sleep timer off');
 }
-function setSleepEndTrack() { clearInterval(sleepTimer); sleepMin=0; sleepEnd=0; sleepTrack=true; toast('Sleep timer set for end of track'); if(V.page==='settings')render(); }
+function setSleepEndTrack() { clearInterval(sleepTimer); sleepMin=0; sleepEnd=0; sleepTrack=true; applyFx(); toast('Sleep timer set for end of track'); if(V.page==='settings')render(); }
 function applyCustomFont() {
   const file=S.settings.customFontFile;
   let style=$('#nyxen-font-style');
@@ -1016,7 +1022,7 @@ async function boot() {
   reindex();
   (S.customThemes||[]).forEach(t=>{if(t&&t.n&&t.a&&Array.isArray(t.g)&&!THEMES.some(x=>x.n===t.n&&x.a===t.a))THEMES.push(t);});
   Object.assign(EQ_PRESETS,S.customEq||{});
-  initAudio(); initVideoPlayer(); applyTheme(); applyWallpaper(); applyCustomFont(); syncKeepAwake();
+  initAudio(); audio.playbackRate = S.settings.speed || 1; initVideoPlayer(); applyTheme(); applyWallpaper(); applyCustomFont(); syncKeepAwake();
   $('#nav').innerHTML = NAV.map(([p, n, ic]) => `<button class="navb" data-act="nav" data-page="${p}">${svg(ic, 22)}<span>${n}</span></button>`).join('');
   window.nyxen.onScanProgress((p) => { $('#sidefoot').textContent = `Scanning ${p.done} / ${p.total}...`; });
   window.nyxen.onCommand((c) => { if (c === 'toggle') toggle(); else if (c === 'next') next(true); else if (c === 'prev') prev(); else if (c === 'stop') audio.pause(); });
