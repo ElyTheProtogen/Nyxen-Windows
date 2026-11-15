@@ -14,7 +14,7 @@ The GitHub Actions workflow in `.github/workflows/build-windows.yml` builds both
 ## Features
 - Local music library, folder scanning, metadata extraction, album artwork, favorites and smart playlists
 - Search by song, artist, album and genre, with recent-search history
-- 25 automatic playlists for discovery, listening recency, favorites and track length
+- 26 automatic playlists for discovery, listening recency, favorites and track length
 - JSON backup export and restore for library metadata, playlists, lyrics, history and settings
 - Play queue, repeat/shuffle modes, queue restoration and optional resume-on-launch
 - 10-band equalizer, tone controls, reverb, custom EQ presets and playback speed
