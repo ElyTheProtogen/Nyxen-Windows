@@ -668,7 +668,7 @@ ipcMain.handle('email:auth', async (_event, input) => {
   catch (error) { return { ok: false, error: error && error.message ? error.message : 'Authentication failed.' }; }
 });
 // GOOGLE SIGN-IN (desktop OAuth 2.0 authorization-code flow with PKCE)
-const GOOGLE_DESKTOP_CLIENT_ID = '936657455185-28l7q0jf6nkh4m44fv5jjmah6qi0a3gk.apps.googleusercontent.com';
+const GOOGLE_DESKTOP_CLIENT_ID = '936657455185-59pnkfdb20lfgf9moujtg86gb7o62ghf.apps.googleusercontent.com';
 
 async function googleOAuthSignIn() {
   const verifier = crypto.randomBytes(32).toString('base64url');
