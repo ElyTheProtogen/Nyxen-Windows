@@ -647,7 +647,7 @@ function pickPlaylist(toAdd) {
 function greet(first) { const n = S.profile.name; toast(first || !S.firstDone ? `Welcome to NyxenPlayer, ${n}!` : `${greeting()}, ${n}`); S.firstDone = true; save(); }
 function showWelcome() {
   const w = $('#welcome'); w.classList.remove('hidden');
-  w.innerHTML = `<div class="dialog" style="text-align:center"><img class="logo-big" src="logo.png" alt=""><h2 style="margin-top:12px">Welcome to NyxenPlayer</h2><div class="sub">Sign in to your Nyxen account to continue.</div><button class="btn" id="w-google" style="width:100%;justify-content:center;margin:18px 0 12px">Continue with Google</button><div class="sub" style="font-size:11px;margin-bottom:12px">or use your email address</div><input class="field" id="w-mail" type="email" autocomplete="email" placeholder="Email address"><input class="field" id="w-password" type="password" autocomplete="current-password" placeholder="Password"><div class="toolbar" style="justify-content:center"><button class="chip on" id="w-signin">Sign in</button><button class="chip" id="w-register">Create account</button></div><div class="err" id="w-err"></div><div class="sub" style="font-size:11px">New accounts receive an email verification link. Nyxen never stores your password.</div><div class="actions"><button class="btn" id="w-go" style="width:100%;justify-content:center">Sign in</button></div></div>`;
+  w.innerHTML = `<div class="dialog" style="text-align:center"><img class="logo-big" src="logo.png" alt=""><h2 style="margin-top:12px">Welcome to NyxenPlayer</h2><div class="sub">Sign in to your Nyxen account to continue.</div><button class="btn" id="w-google" style="width:100%;justify-content:center;margin:18px 0 12px">Continue with Google</button><div class="sub" style="font-size:11px;margin-bottom:12px">or use your email address</div><input class="field" id="w-mail" type="email" autocomplete="email" placeholder="Email address"><input class="field" id="w-password" type="password" autocomplete="current-password" placeholder="Password"><div class="toolbar" style="justify-content:center"><button class="chip on" id="w-signin">Sign in</button><button class="chip" id="w-register">Create account</button></div><div class="err" id="w-err"></div><div class="sub" style="font-size:11px">Email verification is not required. Nyxen never stores your password.</div><div class="actions"><button class="btn" id="w-go" style="width:100%;justify-content:center">Sign in</button></div></div>`;
   let createAccount = false;
   const signIn = $('#w-signin'), register = $('#w-register'), submitButton = $('#w-go');
   const setMode = (create) => {
@@ -664,10 +664,6 @@ function showWelcome() {
     try {
       const result = await window.nyxen.emailAuth({ email, password, createAccount });
       if (!result || !result.ok) throw new Error(result && result.error ? result.error : 'Authentication failed.');
-      if (result.pendingVerification) {
-        error.textContent = 'Verification email sent to ' + result.email + '. Verify it, then return here and sign in.';
-        setMode(false); return;
-      }
       if (!result.profile) throw new Error('Firebase did not return an account.');
       S.googleAccount = result.profile; S.profile = { name: result.profile.name, email: result.profile.email };
       save(); w.classList.add('hidden'); w.innerHTML = ''; greet(!S.firstDone); render();
