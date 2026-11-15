@@ -76,7 +76,7 @@ const REVERBS = [{ n: 'Off', s: 0.1, d: 8 }, { n: 'Small room', s: 0.6, d: 3 }, 
 
 /* ================= state ================= */
 const DEFAULT = () => ({
-  v: 2, profile: { name: '', email: '' }, account: null, guest: false, tracks: [], videos: [], videoFolders: [], playlists: [], folders: [], nextPl: 1, lastScan: 0, lastVideoScan: 0, firstDone: false, lyrics: {}, customThemes: [], customEq: {}, recentSearches: [],
+  v: 2, tracks: [], videos: [], videoFolders: [], playlists: [], folders: [], nextPl: 1, lastScan: 0, lastVideoScan: 0, firstDone: false, lyrics: {}, customThemes: [], customEq: {}, recentSearches: [],
   settings: { theme: 1, wallpaper: 0, cover: true, eqOn: true, gains: Array(10).fill(0), pre: 0, bass: 0, preset: 'Flat', rvPreset: 0, rvMix: 0.3, volume: 0.8, speed: 1, autoResume: false, rememberQueue: true, autoplaySimilar: false, buttonSounds: true, sleepFade: true, autoImport: true, keepAwake: false, mode: 'all', sort: 'title', asc: true, cat: 'tracks' },
   last: { id: null, pos: 0 }, savedQueue: [], savedQueueIndex: 0
 });
@@ -85,6 +85,9 @@ function normalizeState(saved) {
   if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return d;
   const source = { ...saved };
   delete source.googleAccount;
+  delete source.account;
+  delete source.guest;
+  delete source.profile;
   const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
   const baseName = (value) => { const p = String(value || ''); return p.slice(Math.max(p.lastIndexOf('/'), p.lastIndexOf(String.fromCharCode(92))) + 1); };
   const finite = (value, fallback, min = -Infinity, max = Infinity) => {
@@ -155,17 +158,6 @@ function normalizeState(saved) {
   return {
     ...d,
     ...source,
-    profile: {
-      name: typeof saved.profile?.name === 'string' ? saved.profile.name : '',
-      email: typeof saved.profile?.email === 'string' ? saved.profile.email : ''
-    },
-    guest: !!saved.guest,
-    account: isObject(saved.account) && typeof saved.account.sub === 'string' ? {
-      sub: saved.account.sub.slice(0, 160),
-      name: typeof saved.account.name === 'string' ? saved.account.name.slice(0, 120) : '',
-      email: typeof saved.account.email === 'string' ? saved.account.email.slice(0, 254) : '',
-      picture: ''
-    } : null,
     tracks,
     videos,
     videoFolders: Array.isArray(saved.videoFolders) ? saved.videoFolders.filter((item) => typeof item === 'string') : [],
@@ -196,7 +188,6 @@ let saveTimer = 0;
 const save = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => { Promise.resolve(window.nyxen.saveState(S)).catch(() => toast('Could not save NyxenPlayer data')); }, 500); };
 let toastT = 0;
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 3200); }
-const signedIn = () => !!S.guest || !!(S.account && S.account.email);
 document.addEventListener('error', (e) => { if (e.target && e.target.tagName === 'IMG') e.target.remove(); }, true);
 
 /* ================= audio engine (real Web Audio effects) ================= */
@@ -424,7 +415,7 @@ function groupTracks() { const f = { albums: 'album', artists: 'artist', genres:
 function pageHome() {
   const recent = SMART[1].f(S.tracks).slice(0, 14), most = SMART[0].f(S.tracks).slice(0, 14);
   const favs = S.tracks.filter((t) => t.fav).slice(0, 20), added = [...S.tracks].sort((a, b) => b.added - a.added).slice(0, 14);
-  let h = `<div class="page"><div class="hello"><div class="grow"><div class="sub">${greeting()}</div><h1>${esc(S.profile.name || 'Listener')}</h1><div class="sub">${S.tracks.length} songs in your library</div></div></div>`;
+  let h = `<div class="page"><div class="hello"><div class="grow"><div class="sub">${greeting()}</div><h1>${'Listener'}</h1><div class="sub">${S.tracks.length} songs in your library</div></div></div>`;
   if (!S.tracks.length) return h + emptyState('Your library is empty', 'Add a folder with your music to get started.', 'Import a folder', 'import-folder') + '</div>';
   h += `<div class="tiles">${tile('shuffle', 'Shuffle all', 'shuffle-all')}${tile('fav', 'Favorites', 'go-fav')}${tile('trend', 'Most replayed', 'open-pl', 'data-pl="s:most"')}${tile('history', 'Recently played', 'open-pl', 'data-pl="s:recent"')}</div>`;
   const car = (title, list) => { if (!list.length) return ''; const k = reg(ids(list)); return `<h2>${title}</h2><div class="row">${list.map((t, i) => card(t, k, i)).join('')}</div>`; };
@@ -510,7 +501,6 @@ function pageSettings() {
   const toggle = (name,label,desc) => '<div class="setting-row"><div><b>'+label+'</b><small>'+desc+'</small></div><button class="chip '+(S.settings[name]?'on':'')+'" data-act="setting-toggle" data-key="'+name+'">'+(S.settings[name]?'On':'Off')+'</button></div>';
   const header = (title,desc) => '<div class="settings-heading"><button class="chip" data-act="settings-page" data-key="overview">← All settings</button><h1>'+title+'</h1><p class="sub">'+desc+'</p></div>';
   const cards = [
-    ['account','Account','Profile, sign out and local data','◉'],
     ['library','Library & import','Music folders, video files and scanning','▤'],
     ['appearance','Appearance','Themes, accent colors and wallpapers','◐'],
     ['fonts','Fonts','Choose a custom font for Nyxen','Aa'],
@@ -520,11 +510,6 @@ function pageSettings() {
     ['about','About','Version, credits and app information','ⓘ']
   ];
   if (key === 'overview') return '<div class="page settings-home"><div class="settings-heading"><h1>Settings</h1><p class="sub">Choose a section to customize NyxenPlayer.</p></div><div class="settings-card-grid">'+cards.map(c=>'<button class="settings-card" data-act="settings-page" data-key="'+c[0]+'"><span class="settings-card-icon">'+c[3]+'</span><span class="settings-card-copy"><b>'+c[1]+'</b><small>'+c[2]+'</small></span><span class="settings-card-arrow">›</span></button>').join('')+'</div></div>';
-  if (key === 'account') {
-    const account = S.account;
-    const identity = account ? '<div class="split"><div class="grow"><b>'+esc(account.name)+'</b><p class="sub">'+esc(account.email)+'</p><span class="sub">Signed in with email</span></div></div>' : S.guest ? '<div class="split"><div class="grow"><b>Guest session</b><p class="sub">Using Nyxen locally without an account.</p></div></div>' : '<p class="sub">No Nyxen account is currently signed in.</p>';
-    return '<div class="page">'+header('Account','Manage your Nyxen account.')+'<div class="glass"><h3>Nyxen account</h3>'+identity+'<div class="toolbar"><button class="btn" data-act="edit-profile">'+(account?'Change account':S.guest?'Sign in or create account':'Sign in or create account')+'</button>'+(account||S.guest?'<button class="btn ghost" data-act="sign-out">'+(S.guest?'Exit guest mode':'Sign out')+'</button>':'')+'</div></div><div class="glass"><h3>Local profile</h3><p>'+esc(S.profile.name)+' · '+esc(S.profile.email)+'</p><button class="btn ghost" data-act="edit-profile">Edit local profile</button></div><div class="glass"><h3>Local data</h3><p>Your library, playlists, favorites and settings are stored on this computer. Your music files are never deleted by Nyxen.</p><button class="btn danger" data-act="wipe">Delete all my data</button></div></div>';
-  }
   if (key === 'library') return '<div class="page">'+header('Library & import','Manage the folders and media Nyxen scans.')+'<div class="glass"><h3>Music library</h3><p>'+S.folders.length+' watched folders · '+S.tracks.length+' songs</p><div class="toolbar"><button class="btn" data-act="import-folder">Import a folder</button><button class="btn ghost" data-act="import-files">Import files</button><button class="btn ghost" data-act="rescan">Rescan folders</button></div></div><div class="glass"><h3>Video library</h3><p>'+(S.videoFolders||[]).length+' watched folders · '+(S.videos||[]).length+' videos</p><div class="toolbar"><button class="btn ghost" data-act="import-video-folder">Import video folder</button><button class="btn ghost" data-act="import-video-files">Import videos</button></div></div><div class="glass"><h3>Offline soundscapes</h3><p>Import the optional Nyxen offline soundscape collection when its audio assets are included in this build.</p><button class="btn ghost" data-act="offline-pack">Add offline soundscapes</button></div><div class="glass"><h3>Automatic scanning</h3>'+toggle('autoImport','Auto-import watched folders','Rescan watched music and video folders when Nyxen opens.')+'</div></div>';
   if (key === 'appearance') {
     const th = THEMES.map((t,i)=>'<button class="sw '+(S.settings.theme===i?'on':'')+'" data-act="theme" data-i="'+i+'" aria-label="Use '+esc(t.n)+' theme"><i style="background:linear-gradient(180deg,'+t.g.join(',')+')"></i>'+esc(t.n)+'</button>').join('');
@@ -647,36 +632,7 @@ function pickPlaylist(toAdd) {
   $('#pk-x').addEventListener('click', closeModal);
   $('#pk-new').addEventListener('click', async () => { closeModal(); const n = await askName('New playlist', '', 'Create'); if (n) { S.playlists.push({ id: 'p' + S.nextPl++, name: n, ids: [...toAdd] }); save(); toast('Created ' + n); if (V.page === 'playlists') render(); } });
 }
-function greet(first) { const n = S.profile.name; toast(first || !S.firstDone ? `Welcome to NyxenPlayer, ${n}!` : `${greeting()}, ${n}`); S.firstDone = true; save(); }
-function showWelcome() {
-  const w = $('#welcome'); w.classList.remove('hidden');
-  w.innerHTML = `<div class="dialog" style="text-align:center"><img class="logo-big" src="logo.png" alt=""><h2 style="margin-top:12px">Welcome to NyxenPlayer</h2><div class="sub">Sign in to sync your account, or continue locally as a guest.</div><div class="sub" style="font-size:11px;margin-bottom:12px">Sign in or create an account with your email address</div><input class="field" id="w-mail" type="email" autocomplete="email" placeholder="Email address"><input class="field" id="w-password" type="password" autocomplete="current-password" placeholder="Password"><div class="toolbar" style="justify-content:center"><button class="chip on" id="w-signin">Sign in</button><button class="chip" id="w-register">Create account</button></div><div class="err" id="w-err"></div><div class="sub" style="font-size:11px">Email verification is not required. Nyxen never stores your password.</div><div class="actions"><button class="btn" id="w-go" style="width:100%;justify-content:center">Sign in</button><button class="btn ghost" id="w-guest" style="width:100%;justify-content:center;margin-top:8px">Continue as Guest</button></div></div>`;
-  let createAccount = false;
-  const signIn = $('#w-signin'), register = $('#w-register'), submitButton = $('#w-go');
-  const setMode = (create) => {
-    createAccount = create; signIn.classList.toggle('on', !create); register.classList.toggle('on', create);
-    submitButton.textContent = create ? 'Create Nyxen account' : 'Sign in';
-    $('#w-password').autocomplete = create ? 'new-password' : 'current-password';
-    $('#w-err').textContent = '';
-  };
-  signIn.addEventListener('click', () => setMode(false));
-  register.addEventListener('click', () => setMode(true));
-  const submit = async () => {
-    const email = $('#w-mail').value.trim(), password = $('#w-password').value;
-    const error = $('#w-err'); error.textContent = ''; submitButton.disabled = true;
-    try {
-      const result = await window.nyxen.emailAuth({ email, password, createAccount });
-      if (!result || !result.ok) throw new Error(result && result.error ? result.error : 'Authentication failed.');
-      if (!result.profile) throw new Error('Firebase did not return an account.');
-      S.account = result.profile; S.guest = false; S.profile = { name: result.profile.name, email: result.profile.email };
-      save(); w.classList.add('hidden'); w.innerHTML = ''; greet(!S.firstDone); render();
-    } catch (err) { error.textContent = err && err.message ? err.message : 'Authentication failed.'; }
-    finally { submitButton.disabled = false; }
-  };
-  $('#w-guest').addEventListener('click', () => { S.account = null; S.guest = true; S.profile = { name: 'Guest', email: '' }; save(); w.classList.add('hidden'); w.innerHTML = ''; greet(!S.firstDone); render(); });
-  submitButton.addEventListener('click', submit);
-  $('#w-password').addEventListener('keydown', (event) => { if (event.key === 'Enter') submit(); });
-}
+function greet(first) { toast(first || !S.firstDone ? 'Welcome to NyxenPlayer!' : greeting() + ' to NyxenPlayer'); S.firstDone = true; save(); }
 /* ================= library actions ================= */
 let importing = false;
 let videoImporting = false;
@@ -1001,8 +957,6 @@ const ACT = {
   'edit-track': () => editTrack(cur),
   sleep: (d) => { setSleep(+d.m); render(); },
   'sleep-track': () => setSleepEndTrack(),
-  'edit-profile': () => showWelcome(),
-    'sign-out': () => { S.profile = { name: '', email: '' }; S.account = null; S.guest = false; save(); showWelcome(); },
   wipe: async () => {
     if (!await confirmBox('Delete all data?', 'This removes your library, playlists, favorites, play counts, settings and profile from NyxenPlayer. Your music files are not touched.', 'Delete')) return;
     clearTimeout(saveTimer); saveTimer = 0;
@@ -1010,7 +964,7 @@ const ACT = {
     audio.pause(); audio.removeAttribute('src'); audio.load();
     await window.nyxen.wipe();
     clearTimeout(saveTimer); saveTimer = 0;
-    S = DEFAULT(); reindex(); applyTheme(); applyFx(); setReverb(); updatePlayerUI(); render(); showWelcome();
+    S = DEFAULT(); reindex(); applyTheme(); applyFx(); setReverb(); updatePlayerUI(); render();
   }
 };
 const MENU = {
@@ -1120,6 +1074,9 @@ async function boot() {
     queuedOpenVideo = null;
     await openExternalVideo(nextPath);
   }
-  if (!signedIn()) showWelcome(); else { greet(false); if(S.settings.autoResume && cur) play(); if (S.settings.autoImport && S.folders.length && Date.now() - S.lastScan > 300000) importTargets(S.folders, [], true); if (S.settings.autoImport && Array.isArray(S.videoFolders) && S.videoFolders.length && Date.now() - (S.lastVideoScan || 0) > 300000) importVideoTargets(S.videoFolders, [], true); }
+  greet(false);
+  if (S.settings.autoResume && cur) play();
+  if (S.settings.autoImport && S.folders.length && Date.now() - S.lastScan > 300000) importTargets(S.folders, [], true);
+  if (S.settings.autoImport && Array.isArray(S.videoFolders) && S.videoFolders.length && Date.now() - (S.lastVideoScan || 0) > 300000) importVideoTargets(S.videoFolders, [], true);
 }
 boot();
