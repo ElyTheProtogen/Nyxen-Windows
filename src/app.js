@@ -764,7 +764,7 @@ function setSleep(m) {
     sleepTimer = setInterval(() => {
       const left = sleepEnd - Date.now();
       if (left <= 0) { clearInterval(sleepTimer); audio.pause(); sleepMin = 0; sleepEnd = 0; applyFx(); toast('Sleep timer finished'); if (V.page === 'settings') render(); }
-      else if (left < 20000 && nodes.master) nodes.master.gain.value = S.settings.volume * (S.settings.sleepFade ? left / 20000 : 1);
+      else if (left < 20000 && nodes.master) nodes.master.gain.value = muted ? 0 : S.settings.volume * (S.settings.sleepFade ? left / 20000 : 1);
     }, 500);
     toast(`Sleep timer: ${m} min`);
   } else toast('Sleep timer off');
