@@ -253,6 +253,9 @@ async function play() {
   try { await ac.resume(); await audio.play(); } catch { toast('This file cannot be played. It may have moved or use an unsupported format.'); }
 }
 function toggle() { if (!cur) return; if (audio.paused) play(); else audio.pause(); }
+function syncKeepAwake() {
+  if (window.nyxen?.setKeepAwake) window.nyxen.setKeepAwake(!!S.settings.keepAwake && !audio.paused && !audio.ended).catch(() => {});
+}
 function next(manual = true) {
   if (!Q.ids.length) return;
   let i = Q.i + 1;
@@ -296,8 +299,8 @@ const MODES = ['all', 'one', 'order', 'shuffle'];
 const MODE_ICON = { all: 'repeat', one: 'repeat1', order: 'order', shuffle: 'shuffle' };
 const MODE_NAME = { all: 'Repeat all', one: 'Repeat one', order: 'In order', shuffle: 'Shuffle' };
 
-audio.addEventListener('play', () => { document.body.classList.add('playing'); updatePlayerUI(); });
-audio.addEventListener('pause', () => { document.body.classList.remove('playing'); if (cur) { S.last.pos = audio.currentTime; save(); } updatePlayerUI(); });
+audio.addEventListener('play', () => { document.body.classList.add('playing'); syncKeepAwake(); updatePlayerUI(); });
+audio.addEventListener('pause', () => { document.body.classList.remove('playing'); syncKeepAwake(); if (cur) { S.last.pos = audio.currentTime; save(); } updatePlayerUI(); });
 audio.addEventListener('ended', () => {
   if(sleepTrack){sleepTrack=false;audio.pause();toast('Sleep timer finished');if(V.page==='settings')render();return;}
   if (S.settings.mode === 'one') { audio.currentTime = 0; counted = touched = false; play(); } else next(false);
@@ -894,7 +897,7 @@ const ACT = {
     S.customEq=S.customEq||{};S.customEq[name]=S.settings.gains.slice();EQ_PRESETS[name]=S.settings.gains.slice();
     S.settings.preset=name;save();render();toast('Equalizer preset saved');
   },
-  'setting-toggle': (d) => { const k=d.key; S.settings[k]=!S.settings[k]; if(k==='rememberQueue'&&!S.settings[k]){S.savedQueue=[];S.savedQueueIndex=0;} if(k==='keepAwake')window.nyxen.setKeepAwake(S.settings.keepAwake); save(); render(); },
+  'setting-toggle': (d) => { const k=d.key; S.settings[k]=!S.settings[k]; if(k==='rememberQueue'&&!S.settings[k]){S.savedQueue=[];S.savedQueueIndex=0;} if(k==='keepAwake')syncKeepAwake(); save(); render(); },
   'offline-pack': async () => {
     try {
       const items = await window.nyxen.importOfflinePack();
@@ -946,6 +949,7 @@ function uiClick() {
   } catch {}
 }
 document.addEventListener('click', (e) => {
+  if (e.target.closest('button')) uiClick();
   const mb = e.target.closest('#menu [data-m]');
   if (mb) { const id = $('#menu').dataset.id; $('#menu').classList.add('hidden'); MENU[mb.dataset.m](id); return; }
   if (!e.target.closest('#menu')) $('#menu').classList.add('hidden');
@@ -1012,7 +1016,7 @@ async function boot() {
   reindex();
   (S.customThemes||[]).forEach(t=>{if(t&&t.n&&t.a&&Array.isArray(t.g)&&!THEMES.some(x=>x.n===t.n&&x.a===t.a))THEMES.push(t);});
   Object.assign(EQ_PRESETS,S.customEq||{});
-  initAudio(); initVideoPlayer(); applyTheme(); applyWallpaper(); applyCustomFont(); window.nyxen.setKeepAwake(!!S.settings.keepAwake);
+  initAudio(); initVideoPlayer(); applyTheme(); applyWallpaper(); applyCustomFont(); syncKeepAwake();
   $('#nav').innerHTML = NAV.map(([p, n, ic]) => `<button class="navb" data-act="nav" data-page="${p}">${svg(ic, 22)}<span>${n}</span></button>`).join('');
   window.nyxen.onScanProgress((p) => { $('#sidefoot').textContent = `Scanning ${p.done} / ${p.total}...`; });
   window.nyxen.onCommand((c) => { if (c === 'toggle') toggle(); else if (c === 'next') next(true); else if (c === 'prev') prev(); else if (c === 'stop') audio.pause(); });
