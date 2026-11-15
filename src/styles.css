@@ -431,7 +431,7 @@ h2 { letter-spacing: -.025em; }
   #video-back, #video-fullscreen { width: 40px; height: 40px; border-radius: 13px; }
 }
 @media(max-height:560px) {
-  #video-player { inset-top: 42px; gap: 9px; padding: 10px; }
+  #video-player { top: 42px; gap: 9px; padding: 10px; }
   .video-player-header { min-height: 40px; }
   #video-back, #video-fullscreen { width: 36px; height: 36px; }
 }
