@@ -748,13 +748,21 @@ async function googleOAuthSignIn() {
         if (!profileResponse.ok || !profile.sub || !profile.email || profile.email_verified !== true) {
           throw new Error('Google did not return a verified account profile.');
         }
-        const existing = await firebaseAuthRequest('accounts:createAuthUri', { identifier: String(profile.email), continueUri: 'http://localhost' });
-        if (Array.isArray(existing.signinMethods) && existing.signinMethods.length === 0) {
-          throw new Error("This email isn't registered with Nyxen. Please create an account first.");
+        if (!tokens.id_token) {
+          throw new Error('Google did not return an identity token. Please try again.');
         }
-        const firebaseUser = await firebaseAuthRequest('accounts:signInWithIdp', {
-          postBody: new URLSearchParams({ access_token: tokens.access_token, providerId: 'google.com' }).toString(),
-          requestUri: 'http://localhost', returnIdpCredential: true, returnSecureToken: true
+        const gateResponse = await fetch('https://us-central1-nyxenplayer.cloudfunctions.net/googleSignInForExistingUser', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken: tokens.id_token })
+        });
+        const gate = await gateResponse.json().catch(() => ({}));
+        if (!gateResponse.ok || !gate.customToken) {
+          throw new Error(gate.error || 'This Google account could not be verified with Nyxen.');
+        }
+        const firebaseUser = await firebaseAuthRequest('accounts:signInWithCustomToken', {
+          token: gate.customToken,
+          returnSecureToken: true
         });
         if (!firebaseUser.localId || !firebaseUser.email || firebaseUser.emailVerified !== true) {
           throw new Error('Firebase could not verify this Google account.');
