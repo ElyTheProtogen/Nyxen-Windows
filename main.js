@@ -59,6 +59,7 @@ const userData = () => app.getPath('userData');
 const stateFile = () => path.join(userData(), 'nyxen-state.json');
 const coverDir = () => path.join(userData(), 'covers');
 const fontDir = () => path.join(userData(), 'fonts');
+const wallpaperDir = () => path.join(userData(), 'wallpapers');
 
 const idFor = (p) =>
   crypto.createHash('sha1')
@@ -576,6 +577,26 @@ ipcMain.handle('font:pick', async () => {
   };
 });
 
+// PHOTO WALLPAPER IMPORT
+
+ipcMain.handle('wallpaper:pick', async () => {
+  const result = await dialog.showOpenDialog(win, {
+    properties: ['openFile'],
+    filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif'] }]
+  });
+  if (result.canceled || !result.filePaths[0]) return null;
+  const source = result.filePaths[0];
+  const image = nativeImage.createFromPath(source);
+  if (image.isEmpty()) throw new Error('Unsupported or invalid image');
+  const size = image.getSize();
+  if (!size.width || !size.height) throw new Error('Invalid image dimensions');
+  const normalized = size.width > 2560 ? image.resize({ width: 2560, quality: 'good' }) : image;
+  const id = crypto.randomBytes(8).toString('hex');
+  await fsp.mkdir(wallpaperDir(), { recursive: true });
+  await fsp.writeFile(path.join(wallpaperDir(), id + '.jpg'), normalized.toJPEG(90));
+  return { id, name: path.basename(source, path.extname(source)).slice(0, 60) || 'Photo wallpaper' };
+});
+
 // KEEP DISPLAY AWAKE
 
 let keepAwakeId = null;
@@ -604,6 +625,7 @@ ipcMain.handle('wipe', async () => {
     await fsp.rm(coverDir(), { recursive: true, force: true });
     await fsp.rm(path.join(userData(), 'offline'), { recursive: true, force: true });
     await fsp.rm(fontDir(), { recursive: true, force: true });
+    await fsp.rm(wallpaperDir(), { recursive: true, force: true });
     return true;
   } finally {
     isWiping = false;
@@ -654,6 +676,11 @@ app.whenReady().then(() => {
       }
 
       if (u.hostname === 'wallpaper') {
+        const custom = /^\/custom\/([a-f0-9]{16})\.jpg$/.exec(decodeURIComponent(u.pathname));
+        if (custom) {
+          const data = await fsp.readFile(path.join(wallpaperDir(), custom[1] + '.jpg'));
+          return withCors(new Response(data, { headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=31536000' } }));
+        }
         const name = path.basename(decodeURIComponent(u.pathname));
         if (!/^nyxen_wallpaper_0[1-8]\.png$/.test(name)) {
           return new Response('not found', { status: 404 });
