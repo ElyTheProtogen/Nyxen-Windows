@@ -84,6 +84,7 @@ function normalizeState(saved) {
   const d = DEFAULT();
   if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return d;
   const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
+  const baseName = (value) => { const p = String(value || ''); return p.slice(Math.max(p.lastIndexOf('/'), p.lastIndexOf(String.fromCharCode(92))) + 1); };
   const finite = (value, fallback, min = -Infinity, max = Infinity) => {
     const n = Number(value);
     return Number.isFinite(n) ? clamp(n, min, max) : fallback;
@@ -92,7 +93,7 @@ function normalizeState(saved) {
     if (!isObject(item) || typeof item.id !== 'string' || typeof item.path !== 'string') return null;
     return {
       ...item,
-      title: String(item.title || item.path.split(/[\\\\/]/).pop() || 'Untitled'),
+      title: String(item.title || baseName(item.path) || 'Untitled'),
       artist: String(item.artist || 'Unknown artist'),
       album: String(item.album || 'Unknown album'),
       genre: String(item.genre || 'Unknown genre'),
