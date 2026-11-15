@@ -65,11 +65,34 @@ const idFor = (p) =>
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
-app.on('second-instance', () => {
-  if (win) {
+let pendingVideoPath = null;
+
+function isSupportedVideoPath(value) {
+  return typeof value === 'string' && VIDEO_EXT.has(path.extname(value).toLowerCase());
+}
+
+function queueVideoOpen(value) {
+  if (!isSupportedVideoPath(value)) return;
+  pendingVideoPath = path.resolve(value);
+  if (win && !win.isDestroyed()) {
+    if (win.isMinimized()) win.restore();
+    win.focus();
+    win.webContents.send('app:open-video', pendingVideoPath);
+  }
+}
+
+app.on('second-instance', (_event, commandLine) => {
+  const videoPath = commandLine.find((value) => isSupportedVideoPath(value));
+  if (videoPath) queueVideoOpen(videoPath);
+  else if (win) {
     if (win.isMinimized()) win.restore();
     win.focus();
   }
+});
+
+app.on('open-file', (event, filePath) => {
+  event.preventDefault();
+  queueVideoOpen(filePath);
 });
 
 function withCors(res) {
@@ -403,6 +426,30 @@ ipcMain.handle('dialog:files', async () => {
   return r.canceled ? [] : r.filePaths;
 });
 
+ipcMain.handle('video:take-pending-open', () => {
+  const value = pendingVideoPath;
+  pendingVideoPath = null;
+  return value;
+});
+
+ipcMain.handle('video:open-external', async (_event, value) => {
+  if (!isSupportedVideoPath(value)) return null;
+  const filePath = path.resolve(value);
+  const stat = await fsp.stat(filePath).catch(() => null);
+  if (!stat || !stat.isFile()) return null;
+  allowedMediaPaths.add(mediaPathKey(filePath));
+  return {
+    id: idFor(filePath),
+    path: filePath,
+    title: path.basename(filePath, path.extname(filePath)),
+    added: Date.now(),
+    plays: 0,
+    last: 0,
+    fav: false,
+    type: 'video'
+  };
+});
+
 ipcMain.handle('dialog:video-files', async () => {
   const r = await dialog.showOpenDialog(win, {
     properties: ['openFile', 'multiSelections'],
@@ -617,6 +664,8 @@ app.whenReady().then(() => {
     return new Response('not found', { status: 404 });
   });
 
+  const startupVideo = process.argv.find((value) => isSupportedVideoPath(value));
+  if (startupVideo) pendingVideoPath = path.resolve(startupVideo);
   createWindow();
 
   const send = (c) => () => {

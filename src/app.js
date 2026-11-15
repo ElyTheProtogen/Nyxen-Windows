@@ -640,6 +640,30 @@ let videoImporting = false;
 let currentVideo = null;
 let videoCounted = false;
 let lastVideoSave = 0;
+let appBooted = false;
+let queuedOpenVideo = null;
+
+window.nyxen.onOpenVideo((filePath) => {
+  queuedOpenVideo = filePath;
+  if (appBooted) {
+    const nextPath = queuedOpenVideo;
+    queuedOpenVideo = null;
+    openExternalVideo(nextPath);
+  }
+});
+
+async function openExternalVideo(filePath) {
+  const item = await window.nyxen.openVideoPath(filePath);
+  if (!item) { toast('This video file could not be opened.'); return; }
+  S.videos = S.videos || [];
+  let existing = S.videos.find((video) => video.id === item.id);
+  if (!existing) {
+    S.videos.push(item);
+    existing = item;
+  }
+  save();
+  playVideo(existing.id);
+}
 async function importTargets(targets, folders, silent) {
   if (importing || !targets.length) return; importing = true; $('#sidefoot').textContent = 'Scanning...';
   try {
@@ -1043,6 +1067,14 @@ async function boot() {
     cur = track(Q.ids[Q.i]) || lt; resumePos = S.last.pos || 0; audio.src = fileUrl(cur.path); audio.playbackRate=Number(S.settings.speed||1); applyCoverAccent();
   }
   updatePlayerUI(); render(); vizLoop();
+  appBooted = true;
+  const startupVideo = await window.nyxen.takePendingVideo();
+  if (startupVideo) queuedOpenVideo = startupVideo;
+  if (queuedOpenVideo) {
+    const nextPath = queuedOpenVideo;
+    queuedOpenVideo = null;
+    await openExternalVideo(nextPath);
+  }
   if (!signedIn()) showWelcome(); else { greet(false); if(S.settings.autoResume && cur) play(); if (S.settings.autoImport && S.folders.length && Date.now() - S.lastScan > 300000) importTargets(S.folders, [], true); if (S.settings.autoImport && Array.isArray(S.videoFolders) && S.videoFolders.length && Date.now() - (S.lastVideoScan || 0) > 300000) importVideoTargets(S.videoFolders, [], true); }
 }
 boot();

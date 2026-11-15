@@ -18,6 +18,14 @@ contextBridge.exposeInMainWorld('nyxen', {
 
   scanVideos: (targets, known) =>
     ipcRenderer.invoke('scan:videos', targets, known),
+  openVideoPath: (filePath) => ipcRenderer.invoke('video:open-external', filePath),
+  takePendingVideo: () => ipcRenderer.invoke('video:take-pending-open'),
+  onOpenVideo: (cb) => {
+    if (typeof cb !== 'function') return () => {};
+    const listener = (_e, filePath) => cb(filePath);
+    ipcRenderer.on('app:open-video', listener);
+    return () => ipcRenderer.removeListener('app:open-video', listener);
+  },
 
   // Application utilities
   wipe: () => ipcRenderer.invoke('wipe'),
