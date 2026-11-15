@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('nyxen', {
   wipe: () => ipcRenderer.invoke('wipe'),
   importOfflinePack: () => ipcRenderer.invoke('offline:import'),
   pickFont: () => ipcRenderer.invoke('font:pick'),
+  pickWallpaper: () => ipcRenderer.invoke('wallpaper:pick'),
 
   // Power management
   setKeepAwake: (enabled) =>
