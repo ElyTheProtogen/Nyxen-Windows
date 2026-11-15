@@ -131,6 +131,7 @@ function normalizeState(saved) {
   const customThemeCount = Array.isArray(saved.customThemes) ? saved.customThemes.length : 0;
   settings.theme = Math.floor(finite(settings.theme, d.settings.theme, 0, 25 + customThemeCount));
   settings.wallpaper = Math.floor(finite(settings.wallpaper, 0, 0, 8));
+  settings.customWallpaper = typeof settings.customWallpaper === 'string' && /^[a-f0-9]{16}$/.test(settings.customWallpaper) ? settings.customWallpaper : '';
   settings.volume = finite(settings.volume, d.settings.volume, 0, 1);
   settings.speed = finite(settings.speed, 1, 0.5, 2);
   settings.pre = finite(settings.pre, 0, -12, 12);
@@ -168,6 +169,7 @@ function normalizeState(saved) {
     firstDone: !!saved.firstDone,
     lyrics: isObject(saved.lyrics) ? Object.fromEntries(Object.entries(saved.lyrics).filter(([id, value]) => typeof id === 'string' && typeof value === 'string')) : {},
     customThemes: Array.isArray(saved.customThemes) ? saved.customThemes.filter((theme) => isObject(theme) && typeof theme.n === 'string' && typeof theme.a === 'string' && /^#[0-9a-f]{6}$/i.test(theme.a) && Array.isArray(theme.g) && theme.g.length === 3 && theme.g.every((color) => typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color))).map((theme) => ({ ...theme, n: theme.n.slice(0, 24) })) : [],
+    customWallpapers: Array.isArray(saved.customWallpapers) ? saved.customWallpapers.filter((item) => isObject(item) && typeof item.id === 'string' && /^[a-f0-9]{16}$/.test(item.id)).map((item) => ({ id: item.id, name: String(item.name || 'Photo wallpaper').slice(0, 60) })) : [],
     customEq,
     recentSearches: Array.isArray(saved.recentSearches) ? saved.recentSearches.filter((item) => typeof item === 'string').slice(0, 50) : [],
     settings,
@@ -520,8 +522,9 @@ function pageSettings() {
   if (key === 'library') return '<div class="page">'+header('Library & import','Manage the folders and media Nyxen scans.')+'<div class="glass"><h3>Music library</h3><p>'+S.folders.length+' watched folders · '+S.tracks.length+' songs</p><div class="toolbar"><button class="btn" data-act="import-folder">Import a folder</button><button class="btn ghost" data-act="import-files">Import files</button><button class="btn ghost" data-act="rescan">Rescan folders</button></div></div><div class="glass"><h3>Video library</h3><p>'+(S.videoFolders||[]).length+' watched folders · '+(S.videos||[]).length+' videos</p><div class="toolbar"><button class="btn ghost" data-act="import-video-folder">Import video folder</button><button class="btn ghost" data-act="import-video-files">Import videos</button></div></div><div class="glass"><h3>Offline soundscapes</h3><p>Import the optional Nyxen offline soundscape collection when its audio assets are included in this build.</p><button class="btn ghost" data-act="offline-pack">Add offline soundscapes</button></div><div class="glass"><h3>Automatic scanning</h3>'+toggle('autoImport','Auto-import watched folders','Rescan watched music and video folders when Nyxen opens.')+'</div></div>';
   if (key === 'appearance') {
     const th = THEMES.map((t,i)=>'<button class="sw '+(S.settings.theme===i?'on':'')+'" data-act="theme" data-i="'+i+'" aria-label="Use '+esc(t.n)+' theme"><i style="background:linear-gradient(180deg,'+t.g.join(',')+')"></i>'+esc(t.n)+'</button>').join('');
-    const wallpapers = Array.from({length:8},(_,i)=>'<button class="wallpaper '+(S.settings.wallpaper===i+1?'on':'')+'" data-act="wallpaper" data-i="'+(i+1)+'"><img loading="lazy" src="nyxen://wallpaper/nyxen_wallpaper_'+String(i+1).padStart(2,'0')+'.png" alt=""><span>Wallpaper '+(i+1)+'</span></button>').join('');
-    return '<div class="page">'+header('Appearance','Change Nyxen’s colors, theme and background.')+'<div class="glass"><div class="split"><div class="grow"><h3>Album color matching</h3><p>Use the current song’s cover art to tint the player accent.</p></div><button class="chip '+(S.settings.cover?'on':'')+'" data-act="cover-toggle">'+(S.settings.cover?'On':'Off')+'</button></div></div><div class="glass"><h3>Built-in & custom themes</h3><p>Choose a complete gradient and accent palette. Your selection is saved automatically.</p><div class="swatches">'+th+'</div><h3 style="margin-top:22px">Create a custom theme</h3><div class="toolbar"><input class="field" id="custom-theme-name" placeholder="Theme name" maxlength="24"><input type="color" id="custom-theme-color" value="#b14bff" title="Accent color"><button class="btn ghost" data-act="save-custom-theme">Save palette</button></div></div><div class="glass"><div class="split"><div class="grow"><h3>Wallpaper collection</h3><p>Eight original Nyxen wallpapers, bundled for offline use.</p></div><button class="chip '+(!S.settings.wallpaper?'on':'')+'" data-act="wallpaper" data-i="0">No wallpaper</button></div><div class="wallpaper-grid">'+wallpapers+'</div></div></div>';
+    const wallpapers = Array.from({length:8},(_,i)=>'<button class="wallpaper '+(!S.settings.customWallpaper && S.settings.wallpaper===i+1?'on':'')+'" data-act="wallpaper" data-i="'+(i+1)+'"><img loading="lazy" src="nyxen://wallpaper/nyxen_wallpaper_'+String(i+1).padStart(2,'0')+'.png" alt=""><span>Wallpaper '+(i+1)+'</span></button>').join('');
+    const photos = (S.customWallpapers||[]).map((item)=>'<button class="wallpaper '+(S.settings.customWallpaper===item.id?'on':'')+'" data-act="photo-wallpaper" data-id="'+item.id+'"><img loading="lazy" src="nyxen://wallpaper/custom/'+item.id+'.jpg" alt=""><span>'+esc(item.name)+'</span></button>').join('');
+    return '<div class="page">'+header('Appearance','Change Nyxen’s colors, theme and background.')+'<div class="glass"><div class="split"><div class="grow"><h3>Album color matching</h3><p>Use the current song’s cover art to tint the player accent.</p></div><button class="chip '+(S.settings.cover?'on':'')+'" data-act="cover-toggle">'+(S.settings.cover?'On':'Off')+'</button></div></div><div class="glass"><h3>Built-in & custom themes</h3><p>Choose a complete gradient and accent palette. Your selection is saved automatically.</p><div class="swatches">'+th+'</div><h3 style="margin-top:22px">Create a custom theme</h3><div class="toolbar"><input class="field" id="custom-theme-name" placeholder="Theme name" maxlength="24"><input type="color" id="custom-theme-color" value="#b14bff" title="Accent color"><button class="btn ghost" data-act="save-custom-theme">Save palette</button></div></div><div class="glass"><div class="split"><div class="grow"><h3>Wallpaper collection</h3><p>Choose one of the eight built-in backgrounds or add your own photo.</p></div><button class="chip '+(!S.settings.wallpaper && !S.settings.customWallpaper?'on':'')+'" data-act="wallpaper" data-i="0">No wallpaper</button></div><div class="wallpaper-grid">'+wallpapers+photos+'</div><div class="toolbar" style="margin-top:14px"><button class="btn" data-act="import-photo-wallpaper">＋ Add photo wallpaper</button><span class="sub">JPG, PNG, WEBP, BMP or GIF · saved on this PC</span></div></div></div>';
   }
   if (key === 'fonts') return '<div class="page">'+header('Fonts','Set the typeface used throughout the desktop player.')+'<div class="glass"><h3>Current font</h3><p>'+esc(S.settings.customFontName||'System default')+'</p><div class="toolbar"><button class="btn" data-act="import-font">Import .TTF / .OTF font</button><button class="btn ghost" data-act="reset-font">Use system font</button></div><p class="sub">The font file is copied into Nyxen’s local app data, so the setting remains available after restarting.</p></div></div>';
   if (key === 'playback') return '<div class="page">'+header('Playback','Control how Nyxen starts and continues playing music.')+'<div class="glass">'+toggle('autoResume','Resume playback on launch','Continue playing automatically when Nyxen opens.')+toggle('rememberQueue','Save playback queue','Restore the same songs and playback position next time.')+toggle('autoplaySimilar','Auto-play similar tracks','Continue with an unqueued artist or genre match when the queue ends.')+toggle('keepAwake','Keep display awake','Prevent the display from sleeping while music is playing.')+'<div class="setting-row"><div><b>Playback speed</b><small>Adjust the playback rate from 0.5× to 2×.</small></div><select id="speed" class="field compact">'+[0.5,0.75,0.9,1,1.1,1.25,1.5,1.75,2].map(v=>'<option value="'+v+'" '+(Number(S.settings.speed||1)===v?'selected':'')+'>'+v+'×</option>').join('')+'</select></div></div><div class="glass"><h3>Interface behavior</h3>'+toggle('buttonSounds','Button sounds','Play a subtle UI sound when supported.')+'</div></div>';
@@ -854,8 +857,9 @@ function applyCustomFont() {
 function applyWallpaper() {
   const n = clamp(Math.floor(Number(S.settings.wallpaper) || 0), 0, 8), bg = $('#bg');
   if (!bg) return;
-  const image = n ? `url("nyxen://wallpaper/nyxen_wallpaper_${String(n).padStart(2,'0')}.png")` : 'none';
-  bg.style.backgroundImage = n ? `linear-gradient(90deg,rgba(0,0,0,.68),rgba(0,0,0,.58)),${image}` : '';
+  const custom = typeof S.settings.customWallpaper === 'string' && /^[a-f0-9]{16}$/.test(S.settings.customWallpaper);
+  const image = custom ? `url("nyxen://wallpaper/custom/${S.settings.customWallpaper}.jpg")` : n ? `url("nyxen://wallpaper/nyxen_wallpaper_${String(n).padStart(2,'0')}.png")` : 'none';
+  bg.style.backgroundImage = n || custom ? `linear-gradient(90deg,rgba(0,0,0,.68),rgba(0,0,0,.58)),${image}` : '';
   bg.style.backgroundSize = n ? 'cover' : ''; bg.style.backgroundPosition = 'center'; bg.style.backgroundRepeat = 'no-repeat';
 }
 function editTrack(t) {
@@ -971,7 +975,18 @@ const ACT = {
   'eq-reset': () => { Object.assign(S.settings, { gains: Array(10).fill(0), pre: 0, bass: 0, preset: 'Flat', rvPreset: 0, rvMix: 0.3, eqOn: true }); setReverb(); applyFx(); save(); render(); },
   theme: (d) => { const index = Number(d.i); if (!Number.isInteger(index) || !THEMES[index]) return; S.settings.theme = index; applyTheme(); save(); render(); },
   'cover-toggle': () => { S.settings.cover = !S.settings.cover; applyCoverAccent(); save(); render(); },
-  wallpaper: (d) => { const index = Number(d.i); if (!Number.isInteger(index) || index < 0 || index > 8) return; S.settings.wallpaper = index; applyWallpaper(); save(); render(); },
+  wallpaper: (d) => { const index = Number(d.i); if (!Number.isInteger(index) || index < 0 || index > 8) return; S.settings.wallpaper = index; S.settings.customWallpaper = ''; applyWallpaper(); save(); render(); },
+  'photo-wallpaper': (d) => { const id = String(d.id || ''); if (!(S.customWallpapers||[]).some((item) => item.id === id)) return; S.settings.wallpaper = 0; S.settings.customWallpaper = id; applyWallpaper(); save(); render(); },
+  'import-photo-wallpaper': async () => {
+    try {
+      const item = await window.nyxen.pickWallpaper();
+      if (!item) return;
+      S.customWallpapers = S.customWallpapers || [];
+      if (!S.customWallpapers.some((saved) => saved.id === item.id)) S.customWallpapers.push(item);
+      S.settings.wallpaper = 0; S.settings.customWallpaper = item.id;
+      applyWallpaper(); save(); render(); toast('Photo wallpaper added and applied');
+    } catch { toast('Could not import that photo'); }
+  },
   'save-custom-theme': () => {
     const name=$('#custom-theme-name')?.value.trim(), accent=$('#custom-theme-color')?.value;
     if(!name||!accent){toast('Enter a theme name and accent color');return;}
