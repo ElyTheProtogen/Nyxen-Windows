@@ -87,7 +87,7 @@ async function mediaResponse(req, filePath) {
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-    'Access-Control-Allow-Headers': 'Range, Content-Type',
+    'Access-Control-Allow-Headers': 'Range, If-Range, Content-Type',
     'Access-Control-Expose-Headers': 'Accept-Ranges, Content-Length, Content-Range',
     'Accept-Ranges': 'bytes',
     'Cache-Control': 'no-cache',
