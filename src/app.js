@@ -640,7 +640,7 @@ async function importTargets(targets, folders, silent) {
     r.added.forEach((t) => S.tracks.push(t));
     folders.forEach((f) => { if (!S.folders.includes(f)) S.folders.push(f); });
     S.lastScan = Date.now(); reindex(); save();
-    if (r.added.length) toast(`Added ${r.added.length} new songs`); else if (!silent) toast('No new songs found');
+    if (!silent) { if (r.added.length) toast(`Added ${r.added.length} new songs`); else toast('No new songs found'); }
     render();
   } catch { toast('Import failed'); }
   importing = false; $('#sidefoot').textContent = '';
@@ -1006,6 +1006,7 @@ window.addEventListener('blur', () => {
 document.addEventListener('keydown', (e) => {
   const tag = (e.target.tagName || '').toLowerCase();
   if (e.key === 'Escape') { if (!$('#video-player').classList.contains('off')) closeVideoPlayer(); closeOverlays(); return; }
+  if (e.target.closest && e.target.closest('button, a, #nyxen-video, [contenteditable="true"]')) return;
   if (tag === 'input' || tag === 'select' || tag === 'textarea') { if(e.key==='Enter' && e.target.id==='q') rememberSearch(); return; }
   if (e.code === 'Space') { e.preventDefault(); toggle(); }
   else if (e.key === 'ArrowRight') { if (e.ctrlKey) next(true); else audio.currentTime += 5; }
