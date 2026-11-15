@@ -193,7 +193,7 @@ let saveTimer = 0;
 const save = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => { Promise.resolve(window.nyxen.saveState(S)).catch(() => toast('Could not save NyxenPlayer data')); }, 500); };
 let toastT = 0;
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 3200); }
-const signedIn = () => !!(S.googleAccount && S.googleAccount.email) || !!S.profile.name;
+const signedIn = () => !!(S.googleAccount && S.googleAccount.email);
 document.addEventListener('error', (e) => { if (e.target && e.target.tagName === 'IMG') e.target.remove(); }, true);
 
 /* ================= audio engine (real Web Audio effects) ================= */
@@ -519,8 +519,8 @@ function pageSettings() {
   if (key === 'overview') return '<div class="page settings-home"><div class="settings-heading"><h1>Settings</h1><p class="sub">Choose a section to customize NyxenPlayer.</p></div><div class="settings-card-grid">'+cards.map(c=>'<button class="settings-card" data-act="settings-page" data-key="'+c[0]+'"><span class="settings-card-icon">'+c[3]+'</span><span class="settings-card-copy"><b>'+c[1]+'</b><small>'+c[2]+'</small></span><span class="settings-card-arrow">›</span></button>').join('')+'</div></div>';
   if (key === 'account') {
     const account = S.googleAccount;
-    const identity = account ? '<div class="split">'+(account.picture?'<img src="'+esc(account.picture)+'" alt="" style="width:52px;height:52px;border-radius:50%;object-fit:cover">':'')+'<div class="grow"><b>'+esc(account.name)+'</b><p class="sub">'+esc(account.email)+'</p><span class="sub">Connected with Google</span></div></div>' : '<p class="sub">No Google account connected. Sign in to use your Google identity in Nyxen.</p>';
-    return '<div class="page">'+header('Account','Connect your Google account or use a local profile.')+'<div class="glass"><h3>Google account</h3>'+identity+'<div class="toolbar"><button class="btn" data-act="google-sign-in">'+(account?'Switch Google account':'Continue with Google')+'</button>'+(account?'<button class="btn ghost" data-act="sign-out">Sign out</button>':'')+'</div></div><div class="glass"><h3>Local profile</h3><p>'+esc(S.profile.name)+' · '+esc(S.profile.email)+'</p><button class="btn ghost" data-act="edit-profile">Edit local profile</button></div><div class="glass"><h3>Local data</h3><p>Your library, playlists, favorites and settings are stored on this computer. Your music files are never deleted by Nyxen.</p><button class="btn danger" data-act="wipe">Delete all my data</button></div></div>';
+    const identity = account ? '<div class="split">'+(account.picture?'<img src="'+esc(account.picture)+'" alt="" style="width:52px;height:52px;border-radius:50%;object-fit:cover">':'')+'<div class="grow"><b>'+esc(account.name)+'</b><p class="sub">'+esc(account.email)+'</p><span class="sub">Connected to Nyxen account</span></div></div>' : '<p class="sub">No Nyxen account connected. Sign in with Google or email and password.</p>';
+    return '<div class="page">'+header('Account','Manage your Nyxen account.')+'<div class="glass"><h3>Nyxen account</h3>'+identity+'<div class="toolbar"><button class="btn" data-act="google-sign-in">'+(account?'Switch account':'Sign in or create account')+'</button>'+(account?'<button class="btn ghost" data-act="sign-out">Sign out</button>':'')+'</div></div><div class="glass"><h3>Local profile</h3><p>'+esc(S.profile.name)+' · '+esc(S.profile.email)+'</p><button class="btn ghost" data-act="edit-profile">Edit local profile</button></div><div class="glass"><h3>Local data</h3><p>Your library, playlists, favorites and settings are stored on this computer. Your music files are never deleted by Nyxen.</p><button class="btn danger" data-act="wipe">Delete all my data</button></div></div>';
   }
   if (key === 'library') return '<div class="page">'+header('Library & import','Manage the folders and media Nyxen scans.')+'<div class="glass"><h3>Music library</h3><p>'+S.folders.length+' watched folders · '+S.tracks.length+' songs</p><div class="toolbar"><button class="btn" data-act="import-folder">Import a folder</button><button class="btn ghost" data-act="import-files">Import files</button><button class="btn ghost" data-act="rescan">Rescan folders</button></div></div><div class="glass"><h3>Video library</h3><p>'+(S.videoFolders||[]).length+' watched folders · '+(S.videos||[]).length+' videos</p><div class="toolbar"><button class="btn ghost" data-act="import-video-folder">Import video folder</button><button class="btn ghost" data-act="import-video-files">Import videos</button></div></div><div class="glass"><h3>Offline soundscapes</h3><p>Import the optional Nyxen offline soundscape collection when its audio assets are included in this build.</p><button class="btn ghost" data-act="offline-pack">Add offline soundscapes</button></div><div class="glass"><h3>Automatic scanning</h3>'+toggle('autoImport','Auto-import watched folders','Rescan watched music and video folders when Nyxen opens.')+'</div></div>';
   if (key === 'appearance') {
@@ -647,16 +647,37 @@ function pickPlaylist(toAdd) {
 function greet(first) { const n = S.profile.name; toast(first || !S.firstDone ? `Welcome to NyxenPlayer, ${n}!` : `${greeting()}, ${n}`); S.firstDone = true; save(); }
 function showWelcome() {
   const w = $('#welcome'); w.classList.remove('hidden');
-  w.innerHTML = `<div class="dialog" style="text-align:center"><img class="logo-big" src="logo.png" alt=""><h2 style="margin-top:12px">Welcome to NyxenPlayer</h2><div class="sub">Your music, your way. Everything stays on this computer.</div><button class="btn" id="w-google" style="width:100%;justify-content:center;margin:18px 0 10px">Continue with Google</button><div class="sub" style="font-size:11px;margin-bottom:14px">or use a local profile</div><input class="field" id="w-name" placeholder="What should we call you?" value="${esc(S.profile.name)}"><input class="field" id="w-mail" placeholder="Email address (optional)" value="${esc(S.profile.email)}"><div class="err" id="w-err"></div><div class="sub" style="font-size:11px">Google sign-in opens your default browser. Nyxen stores your account profile locally, not your Google password or access token.</div><div class="actions"><button class="btn" id="w-go" style="width:100%;justify-content:center">Get started</button></div></div>`;
-  const submit = () => {
-    const name = $('#w-name').value.trim() || 'Friend', mail = $('#w-mail').value.trim();
-    if (!isEmail(mail)) { $('#w-err').textContent = 'Enter a valid email address or leave it blank'; return; }
-    S.profile = { name, email: mail }; save(); w.classList.add('hidden'); w.innerHTML = ''; greet(!S.firstDone); render();
+  w.innerHTML = `<div class="dialog" style="text-align:center"><img class="logo-big" src="logo.png" alt=""><h2 style="margin-top:12px">Welcome to NyxenPlayer</h2><div class="sub">Sign in to your Nyxen account to continue.</div><button class="btn" id="w-google" style="width:100%;justify-content:center;margin:18px 0 12px">Continue with Google</button><div class="sub" style="font-size:11px;margin-bottom:12px">or use your email address</div><input class="field" id="w-mail" type="email" autocomplete="email" placeholder="Email address"><input class="field" id="w-password" type="password" autocomplete="current-password" placeholder="Password"><div class="toolbar" style="justify-content:center"><button class="chip on" id="w-signin">Sign in</button><button class="chip" id="w-register">Create account</button></div><div class="err" id="w-err"></div><div class="sub" style="font-size:11px">New accounts receive an email verification link. Nyxen never stores your password.</div><div class="actions"><button class="btn" id="w-go" style="width:100%;justify-content:center">Sign in</button></div></div>`;
+  let createAccount = false;
+  const signIn = $('#w-signin'), register = $('#w-register'), submitButton = $('#w-go');
+  const setMode = (create) => {
+    createAccount = create; signIn.classList.toggle('on', !create); register.classList.toggle('on', create);
+    submitButton.textContent = create ? 'Create Nyxen account' : 'Sign in';
+    $('#w-password').autocomplete = create ? 'new-password' : 'current-password';
+    $('#w-err').textContent = '';
   };
-  $('#w-go').addEventListener('click', submit); $('#w-mail').addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+  signIn.addEventListener('click', () => setMode(false));
+  register.addEventListener('click', () => setMode(true));
+  const submit = async () => {
+    const email = $('#w-mail').value.trim(), password = $('#w-password').value;
+    const error = $('#w-err'); error.textContent = ''; submitButton.disabled = true;
+    try {
+      const result = await window.nyxen.emailAuth({ email, password, createAccount });
+      if (!result || !result.ok) throw new Error(result && result.error ? result.error : 'Authentication failed.');
+      if (result.pendingVerification) {
+        error.textContent = 'Verification email sent to ' + result.email + '. Verify it, then return here and sign in.';
+        setMode(false); return;
+      }
+      if (!result.profile) throw new Error('Firebase did not return an account.');
+      S.googleAccount = result.profile; S.profile = { name: result.profile.name, email: result.profile.email };
+      save(); w.classList.add('hidden'); w.innerHTML = ''; greet(!S.firstDone); render();
+    } catch (err) { error.textContent = err && err.message ? err.message : 'Authentication failed.'; }
+    finally { submitButton.disabled = false; }
+  };
+  submitButton.addEventListener('click', submit);
+  $('#w-password').addEventListener('keydown', (event) => { if (event.key === 'Enter') submit(); });
   $('#w-google').addEventListener('click', connectGoogleAccount);
 }
-
 async function connectGoogleAccount() {
   try {
     const result = await window.nyxen.googleSignIn();
