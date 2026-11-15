@@ -281,8 +281,12 @@ async function scanVideos(targets, known) {
 
 // APPLICATION STATE
 
+let stateWriteChain = Promise.resolve();
+let isWiping = false;
+
 ipcMain.handle('state:load', async () => {
   try {
+    await stateWriteChain.catch(() => {});
     return JSON.parse(await fsp.readFile(stateFile(), 'utf8'));
   } catch {
     return null;
@@ -290,13 +294,16 @@ ipcMain.handle('state:load', async () => {
 });
 
 ipcMain.handle('state:save', async (_e, data) => {
-  await fsp.mkdir(userData(), { recursive: true });
-
-  const tmp = stateFile() + '.tmp';
-
-  await fsp.writeFile(tmp, JSON.stringify(data));
-  await fsp.rename(tmp, stateFile());
-
+  if (isWiping) return false;
+  const serialized = JSON.stringify(data);
+  const write = stateWriteChain.catch(() => {}).then(async () => {
+    await fsp.mkdir(userData(), { recursive: true });
+    const tmp = stateFile() + '.tmp';
+    await fsp.writeFile(tmp, serialized);
+    await fsp.rename(tmp, stateFile());
+  });
+  stateWriteChain = write;
+  await write;
   return true;
 });
 
@@ -466,16 +473,19 @@ ipcMain.handle('power:keep-awake', (_e, enabled) => {
 // WIPE APPLICATION DATA
 
 ipcMain.handle('wipe', async () => {
-  if (keepAwakeId !== null) { powerSaveBlocker.stop(keepAwakeId); keepAwakeId = null; }
-  await fsp.rm(stateFile(), { force: true });
-  await fsp.rm(coverDir(), { recursive: true, force: true });
-  await fsp.rm(path.join(userData(), 'offline'), {
-    recursive: true,
-    force: true
-  });
-  await fsp.rm(fontDir(), { recursive: true, force: true });
-
-  return true;
+  isWiping = true;
+  try {
+    await stateWriteChain.catch(() => {});
+    if (keepAwakeId !== null) { powerSaveBlocker.stop(keepAwakeId); keepAwakeId = null; }
+    await fsp.rm(stateFile(), { force: true });
+    await fsp.rm(stateFile() + '.tmp', { force: true });
+    await fsp.rm(coverDir(), { recursive: true, force: true });
+    await fsp.rm(path.join(userData(), 'offline'), { recursive: true, force: true });
+    await fsp.rm(fontDir(), { recursive: true, force: true });
+    return true;
+  } finally {
+    isWiping = false;
+  }
 });
 
 // EXTERNAL LINKS
