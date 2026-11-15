@@ -646,6 +646,7 @@ async function firebaseAuthRequest(endpoint, payload) {
 
 async function firebaseEmailAuth(input) {
   const email = String(input && input.email || '').trim();
+  const password = String(input && input.password || '');
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Enter a valid email address.');
   const createAccount = !!(input && input.createAccount);
   if (password.length < 6) throw new Error('Password must be at least 6 characters.');
