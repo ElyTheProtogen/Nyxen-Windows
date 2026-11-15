@@ -31,7 +31,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
+
+      - name: Verify project files
+        shell: pwsh
+        run: |
+          if (!(Test-Path "package.json")) {
+            throw "package.json was not found in the repository root."
+          }
 
       - name: Install dependencies
         run: npm install
