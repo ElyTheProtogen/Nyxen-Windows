@@ -305,6 +305,7 @@ const MODE_NAME = { all: 'Repeat all', one: 'Repeat one', order: 'In order', shu
 audio.addEventListener('play', () => { document.body.classList.add('playing'); syncKeepAwake(); updatePlayerUI(); });
 audio.addEventListener('pause', () => { document.body.classList.remove('playing'); syncKeepAwake(); if (cur) { S.last.pos = audio.currentTime; save(); } updatePlayerUI(); });
 audio.addEventListener('ended', () => {
+  syncKeepAwake();
   if(sleepTrack){sleepTrack=false;audio.pause();toast('Sleep timer finished');if(V.page==='settings')render();return;}
   if (S.settings.mode === 'one') { audio.currentTime = 0; counted = touched = false; play(); } else next(false);
 });
