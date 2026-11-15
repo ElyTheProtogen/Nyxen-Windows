@@ -48,7 +48,7 @@ const allowedMediaPaths = new Set();
 const mediaPathKey = (value) => path.resolve(value).toLowerCase();
 function rememberStateMedia(state) {
   for (const item of [...(Array.isArray(state?.tracks) ? state.tracks : []), ...(Array.isArray(state?.videos) ? state.videos : [])]) {
-    if (item && typeof item.path === 'string') allowedMediaPaths.add(mediaPathKey(item.path));
+    if (item && typeof item.path === 'string' && (AUDIO_EXT.has(path.extname(item.path).toLowerCase()) || VIDEO_EXT.has(path.extname(item.path).toLowerCase()))) allowedMediaPaths.add(mediaPathKey(item.path));
   }
 }
 
