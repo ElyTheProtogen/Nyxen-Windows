@@ -144,7 +144,9 @@ async function scan(targets, known) {
     }
   }
 
-  const fresh = files.filter((f) => !known.has(idFor(f)));
+  const uniqueFiles = [...new Map(files.map((file) => [path.resolve(file).toLowerCase(), file])).values()];
+  const knownIds = known instanceof Set ? known : new Set(Array.isArray(known) ? known : []);
+  const fresh = uniqueFiles.filter((file) => !knownIds.has(idFor(file)));
 
   await fsp.mkdir(coverDir(), { recursive: true });
 
@@ -208,7 +210,7 @@ async function scan(targets, known) {
 
   return {
     added,
-    found: files.length
+    found: uniqueFiles.length
   };
 }
 
@@ -248,9 +250,10 @@ async function scanVideos(targets, known) {
     }
   }
 
-  const knownIds = new Set(known || []);
+  const uniqueFiles = [...new Map(files.map((file) => [path.resolve(file).toLowerCase(), file])).values()];
+  const knownIds = new Set(Array.isArray(known) ? known : []);
 
-  const added = files
+  const added = uniqueFiles
     .filter((file) => !knownIds.has(idFor(file)))
     .map((file) => ({
       id: idFor(file),
@@ -265,7 +268,7 @@ async function scanVideos(targets, known) {
 
   return {
     added,
-    found: files.length
+    found: uniqueFiles.length
   };
 }
 
@@ -330,11 +333,15 @@ ipcMain.handle('dialog:video-files', async () => {
 // AUDIO AND VIDEO SCAN HANDLERS
 
 ipcMain.handle('scan', (_e, targets, known) => {
-  return scan(targets, new Set(known));
+  const safeTargets = Array.isArray(targets) ? targets.filter((item) => typeof item === 'string' && item.length) : [];
+  const safeKnown = Array.isArray(known) ? known.filter((item) => typeof item === 'string') : [];
+  return scan(safeTargets, new Set(safeKnown));
 });
 
 ipcMain.handle('scan:videos', (_e, targets, known) => {
-  return scanVideos(targets, known);
+  const safeTargets = Array.isArray(targets) ? targets.filter((item) => typeof item === 'string' && item.length) : [];
+  const safeKnown = Array.isArray(known) ? known.filter((item) => typeof item === 'string') : [];
+  return scanVideos(safeTargets, safeKnown);
 });
 
 // OFFLINE AUDIO IMPORT
@@ -352,6 +359,15 @@ ipcMain.handle('offline:import', async () => {
     'nyxen_sample_02.wav',
     'nyxen_sample_03.wav'
   ];
+  const required = [
+    ...names.map((name) => path.join(audioDir, name)),
+    ...names.map((_, i) => path.join(coverSource, `nyxen_cover_0${i + 1}.png`))
+  ];
+  const missing = [];
+  for (const file of required) {
+    try { await fsp.access(file); } catch { missing.push(path.basename(file)); }
+  }
+  if (missing.length) return { available: false, missing };
 
   const added = [];
 
