@@ -90,7 +90,7 @@ function normalizeState(saved) {
     return Number.isFinite(n) ? clamp(n, min, max) : fallback;
   };
   const cleanTrack = (item) => {
-    if (!isObject(item) || typeof item.id !== 'string' || typeof item.path !== 'string') return null;
+    if (!isObject(item) || typeof item.id !== 'string' || item.id.length !== 12 || ![...item.id].every((ch) => '0123456789abcdef'.includes(ch.toLowerCase())) || typeof item.path !== 'string') return null;
     return {
       ...item,
       title: String(item.title || baseName(item.path) || 'Untitled'),
@@ -106,7 +106,7 @@ function normalizeState(saved) {
     };
   };
   const tracks = (Array.isArray(saved.tracks) ? saved.tracks : []).map(cleanTrack).filter(Boolean);
-  const videos = (Array.isArray(saved.videos) ? saved.videos : []).filter((item) => isObject(item) && typeof item.id === 'string' && typeof item.path === 'string').map((item) => ({
+  const videos = (Array.isArray(saved.videos) ? saved.videos : []).filter((item) => isObject(item) && typeof item.id === 'string' && item.id.length === 12 && [...item.id].every((ch) => '0123456789abcdef'.includes(ch.toLowerCase())) && typeof item.path === 'string').map((item) => ({
     ...item,
     title: String(item.title || item.path.split(/[\\\\/]/).pop() || 'Untitled video'),
     added: finite(item.added, Date.now(), 0),
@@ -115,7 +115,7 @@ function normalizeState(saved) {
     fav: !!item.fav,
     type: 'video'
   }));
-  const playlists = (Array.isArray(saved.playlists) ? saved.playlists : []).filter((item) => isObject(item) && typeof item.id === 'string').map((item) => ({
+  const playlists = (Array.isArray(saved.playlists) ? saved.playlists : []).filter((item) => isObject(item) && typeof item.id === 'string' && item.id.startsWith('p') && Number.isInteger(Number(item.id.slice(1))) && Number(item.id.slice(1)) > 0).map((item) => ({
     id: item.id,
     name: String(item.name || 'Untitled playlist'),
     ids: Array.isArray(item.ids) ? item.ids.filter((id) => typeof id === 'string') : []
@@ -139,7 +139,7 @@ function normalizeState(saved) {
   if (isObject(saved.customEq)) {
     for (const [name, values] of Object.entries(saved.customEq)) {
       if (!['__proto__', 'prototype', 'constructor'].includes(name) && Array.isArray(values) && values.length === 10 && values.every((v) => Number.isFinite(Number(v)))) {
-        customEq[name] = values.map((v) => finite(v, 0, -12, 12));
+        customEq[name.slice(0, 30)] = values.map((v) => finite(v, 0, -12, 12));
       }
     }
   }
@@ -160,7 +160,7 @@ function normalizeState(saved) {
     lastVideoScan: finite(saved.lastVideoScan, 0, 0),
     firstDone: !!saved.firstDone,
     lyrics: isObject(saved.lyrics) ? Object.fromEntries(Object.entries(saved.lyrics).filter(([id, value]) => typeof id === 'string' && typeof value === 'string')) : {},
-    customThemes: Array.isArray(saved.customThemes) ? saved.customThemes.filter((theme) => isObject(theme) && typeof theme.n === 'string' && typeof theme.a === 'string' && Array.isArray(theme.g) && theme.g.length === 3 && theme.g.every((color) => typeof color === 'string')) : [],
+    customThemes: Array.isArray(saved.customThemes) ? saved.customThemes.filter((theme) => isObject(theme) && typeof theme.n === 'string' && typeof theme.a === 'string' && /^#[0-9a-f]{6}$/i.test(theme.a) && Array.isArray(theme.g) && theme.g.length === 3 && theme.g.every((color) => typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color))).map((theme) => ({ ...theme, n: theme.n.slice(0, 24) })) : [],
     customEq,
     recentSearches: Array.isArray(saved.recentSearches) ? saved.recentSearches.filter((item) => typeof item === 'string').slice(0, 50) : [],
     settings,
@@ -466,7 +466,7 @@ const slider = (id, label, min, max, step, val, unit) => `<div class="split" sty
 function pageStudio() {
   const s = S.settings;
   return `<div class="page"><div class="split"><div class="grow"><h1>Audio Studio</h1><div class="sub">${s.eqOn ? 'Effects on · ' + esc(s.preset) : 'Effects off'}</div></div><button class="btn ${s.eqOn ? '' : 'ghost'}" data-act="eq-toggle">${svg('power', 18)} ${s.eqOn ? 'On' : 'Off'}</button></div>
-<div class="toolbar">${Object.keys(EQ_PRESETS).map((n) => `<button class="chip ${s.preset === n ? 'on' : ''}" data-act="eq-preset" data-n="${n}">${n}</button>`).join('')}</div>
+<div class="toolbar">${Object.keys(EQ_PRESETS).map((n) => `<button class="chip ${s.preset === n ? 'on' : ''}" data-act="eq-preset" data-n="${esc(n)}">${esc(n)}</button>`).join('')}</div>
 <div class="glass"><canvas class="viz" id="viz2"></canvas><div class="eq">${BANDS.map((f, i) => `<div><span>${s.gains[i] > 0 ? '+' : ''}${s.gains[i]}</span><input class="v" type="range" min="-12" max="12" step="0.5" value="${s.gains[i]}" data-band="${i}"><span>${f >= 1000 ? f / 1000 + 'k' : f}</span></div>`).join('')}</div></div>
 <div class="glass"><h3>Tone</h3>${slider('pre', 'Preamp', -12, 12, 0.5, s.pre, ' dB')}${slider('bass', 'Bass boost', 0, 12, 0.5, s.bass, ' dB')}</div>
 <div class="glass"><h3>Reverb</h3><div class="toolbar">${REVERBS.map((r, i) => `<button class="chip ${s.rvPreset === i ? 'on' : ''}" data-act="rv" data-i="${i}">${r.n}</button>`).join('')}</div>${slider('rvmix', 'Wet / dry mix', 0, 1, 0.05, s.rvMix, '')}</div>
@@ -486,7 +486,7 @@ function pageStats() {
 const ABOUT = 'NyxenPlayer is a music player built around one simple idea: your music, your way. It plays the songs you already own, whether they are MP3, M4A, OGG, WAV or FLAC files stored on your computer, and wraps them in a fast, dark and animated design with gradient themes and a real sound studio.\n\nYour music never leaves your computer. There are no ads, no tracking and no servers. Your playlists, favorites, play counts and settings are stored only on this device, and you can delete everything at any time in Settings.\n\nMade by: [your name]    Contact: your-email@gmail.com';
 let sleepMin = 0, sleepEnd = 0, sleepTimer = 0, sleepTrack = false;
 function pageSettings() {
-  const th = THEMES.map((t, i) => `<div class="sw ${S.settings.theme === i ? 'on' : ''}" data-act="theme" data-i="${i}"><i style="background:linear-gradient(180deg,${t.g.join(',')})"></i>${t.n}</div>`).join('');
+  const th = THEMES.map((t, i) => `<div class="sw ${S.settings.theme === i ? 'on' : ''}" data-act="theme" data-i="${i}"><i style="background:linear-gradient(180deg,${t.g.join(',')})"></i>${esc(t.n)}</div>`).join('');
   const wallpapers = Array.from({length:8},(_,i)=>`<button class="wallpaper ${S.settings.wallpaper===i+1?'on':''}" data-act="wallpaper" data-i="${i+1}"><img src="../resources/offline/wallpapers/nyxen_wallpaper_${String(i+1).padStart(2,'0')}.png"><span>${i+1}</span></button>`).join('');
   const toggle = (key,label,desc) => `<div class="setting-row"><div><b>${label}</b><small>${desc}</small></div><button class="chip ${S.settings[key]?'on':''}" data-act="setting-toggle" data-key="${key}">${S.settings[key]?'On':'Off'}</button></div>`;
   return `<div class="page"><h1>Settings</h1>
