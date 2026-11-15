@@ -140,7 +140,7 @@ function normalizeState(saved) {
   }
   settings.preset = typeof settings.preset === 'string' ? settings.preset.slice(0, 30) : 'Flat';
   settings.customFontName = typeof settings.customFontName === 'string' ? settings.customFontName.slice(0, 80) : '';
-  settings.customFontFile = typeof settings.customFontFile === 'string' && /^[A-Za-z0-9_-]{1,60}\\.(ttf|otf)$/i.test(settings.customFontFile) ? settings.customFontFile : '';
+  settings.customFontFile = typeof settings.customFontFile === 'string' && /^[A-Za-z0-9_-]{1,60}\.(ttf|otf)$/i.test(settings.customFontFile) ? settings.customFontFile : '';
   const customEq = {};
   if (isObject(saved.customEq)) {
     for (const [name, values] of Object.entries(saved.customEq)) {
