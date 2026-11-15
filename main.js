@@ -14,6 +14,7 @@ const {
 } = require('electron');
 
 const path = require('path');
+const http = require('http');
 const fs = require('fs');
 const fsp = fs.promises;
 const crypto = require('crypto');
@@ -618,6 +619,136 @@ ipcMain.handle('open-external', async (_e, value) => {
     return true;
   } catch {
     return false;
+  }
+});
+
+// GOOGLE SIGN-IN (desktop OAuth 2.0 authorization-code flow with PKCE)
+const GOOGLE_DESKTOP_CLIENT_ID = '936657455185-28l7q0jf6nkh4m44fv5jjmah6qi0a3gk.apps.googleusercontent.com';
+
+async function googleOAuthSignIn() {
+  const verifier = crypto.randomBytes(32).toString('base64url');
+  const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
+  const state = crypto.randomBytes(24).toString('base64url');
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timeout = null;
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      if (timeout) clearTimeout(timeout);
+      try { server.close(); } catch {}
+      if (error) reject(error);
+      else resolve(value);
+    };
+
+    const server = http.createServer(async (req, res) => {
+      let callback;
+      try { callback = new URL(req.url, 'http://127.0.0.1'); } catch {
+        res.writeHead(400).end('Invalid callback.');
+        return;
+      }
+      if (callback.pathname !== '/oauth2callback') {
+        res.writeHead(404).end('Not found.');
+        return;
+      }
+      if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress)) {
+        res.writeHead(403).end('Forbidden.');
+        return;
+      }
+      if (callback.searchParams.get('state') !== state) {
+        res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' })
+          .end('<h2>Nyxen sign-in could not be verified.</h2><p>Close this tab and try again.</p>');
+        finish(new Error('Google sign-in verification failed. Please try again.'));
+        return;
+      }
+      const oauthError = callback.searchParams.get('error');
+      if (oauthError) {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+          .end('<h2>Google sign-in was not completed.</h2><p>You can close this tab and return to NyxenPlayer.</p>');
+        finish(new Error(oauthError === 'access_denied' ? 'Google sign-in was cancelled.' : 'Google sign-in was not completed.'));
+        return;
+      }
+      const code = callback.searchParams.get('code');
+      if (!code) {
+        res.writeHead(400).end('Missing authorization code.');
+        finish(new Error('Google did not return an authorization code.'));
+        return;
+      }
+
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+        .end('<!doctype html><html><head><meta charset="utf-8"><title>NyxenPlayer</title></head><body style="font:16px Segoe UI, sans-serif;background:#101014;color:#fff;padding:48px"><h2>Google sign-in complete</h2><p>You can close this tab and return to NyxenPlayer.</p></body></html>');
+
+      try {
+        const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: GOOGLE_DESKTOP_CLIENT_ID,
+            code,
+            code_verifier: verifier,
+            grant_type: 'authorization_code',
+            redirect_uri: redirectUri
+          })
+        });
+        const tokens = await tokenResponse.json();
+        if (!tokenResponse.ok || !tokens.access_token) {
+          throw new Error(tokens.error_description || 'Google could not complete sign-in.');
+        }
+
+        const profileResponse = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
+          headers: { Authorization: 'Bearer ' + tokens.access_token }
+        });
+        const profile = await profileResponse.json();
+        if (!profileResponse.ok || !profile.sub || !profile.email || profile.email_verified !== true) {
+          throw new Error('Google did not return a verified account profile.');
+        }
+        finish(null, {
+          sub: String(profile.sub),
+          name: String(profile.name || profile.email).slice(0, 120),
+          email: String(profile.email).slice(0, 254),
+          picture: typeof profile.picture === 'string' && profile.picture.startsWith('https://') ? profile.picture : ''
+        });
+      } catch (error) {
+        finish(new Error(error && error.message ? error.message : 'Google sign-in failed.'));
+      }
+    });
+
+    server.on('error', () => finish(new Error('Could not start the local Google sign-in listener.')));
+    server.listen(0, '127.0.0.1', async () => {
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        finish(new Error('Could not start the local Google sign-in listener.'));
+        return;
+      }
+      const redirectUri = 'http://127.0.0.1:' + address.port + '/oauth2callback';
+      const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+      authUrl.search = new URLSearchParams({
+        client_id: GOOGLE_DESKTOP_CLIENT_ID,
+        redirect_uri: redirectUri,
+        response_type: 'code',
+        scope: 'openid email profile',
+        code_challenge: challenge,
+        code_challenge_method: 'S256',
+        state,
+        prompt: 'select_account'
+      }).toString();
+      try {
+        await shell.openExternal(authUrl.toString());
+      } catch {
+        finish(new Error('Could not open your default browser for Google sign-in.'));
+      }
+    });
+
+    timeout = setTimeout(() => finish(new Error('Google sign-in timed out. Please try again.')), 3 * 60 * 1000);
+  });
+}
+
+ipcMain.handle('google:sign-in', async () => {
+  try {
+    return { ok: true, profile: await googleOAuthSignIn() };
+  } catch (error) {
+    return { ok: false, error: error && error.message ? error.message : 'Google sign-in failed.' };
   }
 });
 
