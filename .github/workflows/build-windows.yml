@@ -8,6 +8,7 @@ on:
       - 'build/**'
       - 'main.js'
       - 'preload.js'
+      - 'resources/**'
       - 'package.json'
       - 'package-lock.json'
       - 'README.md'
