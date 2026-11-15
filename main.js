@@ -621,46 +621,6 @@ ipcMain.handle('open-external', async (_e, value) => {
   }
 });
 
-// Firebase Authentication REST API. The API key is public app configuration, not a service-account credential.
-const FIREBASE_WEB_API_KEY = 'AIzaSyBfYKwEhCVmlqc_-RiEhbVvvmp-AbpoNz';
-
-async function firebaseAuthRequest(endpoint, payload) {
-  const response = await fetch('https://identitytoolkit.googleapis.com/v1/' + endpoint + '?key=' + FIREBASE_WEB_API_KEY, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const code = data && data.error && data.error.message ? data.error.message : '';
-    const message = code.includes('EMAIL_NOT_FOUND') ? "This email isn't registered with Nyxen. Please create an account first."
-      : code.includes('EMAIL_EXISTS') ? 'An account with this email already exists. Sign in instead.'
-      : code.includes('WEAK_PASSWORD') ? 'Choose a password with at least 6 characters.'
-      : code.includes('INVALID_PASSWORD') || code.includes('INVALID_LOGIN_CREDENTIALS') ? 'Incorrect email or password.'
-      : code.includes('INVALID_EMAIL') ? 'Enter a valid email address.'
-      : code.includes('OPERATION_NOT_ALLOWED') ? 'This sign-in method is not enabled in Firebase.'
-      : 'Firebase authentication failed. Please check your details and try again.';
-    throw new Error(message);
-  }
-  return data;
-}
-
-async function firebaseEmailAuth(input) {
-  const email = String(input && input.email || '').trim();
-  const password = String(input && input.password || '');
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Enter a valid email address.');
-  const createAccount = !!(input && input.createAccount);
-  if (password.length < 6) throw new Error('Password must be at least 6 characters.');
-  if (createAccount) {
-    const created = await firebaseAuthRequest('accounts:signUp', { email, password, returnSecureToken: true });
-    return { ok: true, profile: { sub: String(created.localId), name: String(created.displayName || email).slice(0, 120), email: String(created.email || email).slice(0, 254), picture: '' } };
-  }
-  const user = await firebaseAuthRequest('accounts:signInWithPassword', { email, password, returnSecureToken: true });
-  return { ok: true, profile: { sub: String(user.localId), name: String(user.displayName || user.email).slice(0, 120), email: String(user.email).slice(0, 254), picture: '' } };
-}
-
-ipcMain.handle('email:auth', async (_event, input) => {
-  try { return await firebaseEmailAuth(input || {}); }
-  catch (error) { return { ok: false, error: error && error.message ? error.message : 'Authentication failed.' }; }
-});
 // APPLICATION STARTUP
 
 app.whenReady().then(() => {
