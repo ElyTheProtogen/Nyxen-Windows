@@ -76,7 +76,7 @@ const REVERBS = [{ n: 'Off', s: 0.1, d: 8 }, { n: 'Small room', s: 0.6, d: 3 }, 
 
 /* ================= state ================= */
 const DEFAULT = () => ({
-  v: 2, profile: { name: '', email: '' }, tracks: [], videos: [], videoFolders: [], playlists: [], folders: [], nextPl: 1, lastScan: 0, firstDone: false, lyrics: {}, customThemes: [], customEq: {}, recentSearches: [],
+  v: 2, profile: { name: '', email: '' }, tracks: [], videos: [], videoFolders: [], playlists: [], folders: [], nextPl: 1, lastScan: 0, lastVideoScan: 0, firstDone: false, lyrics: {}, customThemes: [], customEq: {}, recentSearches: [],
   settings: { theme: 1, wallpaper: 0, cover: true, eqOn: true, gains: Array(10).fill(0), pre: 0, bass: 0, preset: 'Flat', rvPreset: 0, rvMix: 0.3, volume: 0.8, speed: 1, autoResume: false, rememberQueue: true, autoplaySimilar: false, buttonSounds: true, sleepFade: true, autoImport: true, keepAwake: false, mode: 'all', sort: 'title', asc: true, cat: 'tracks' },
   last: { id: null, pos: 0 }, savedQueue: [], savedQueueIndex: 0
 });
@@ -547,7 +547,7 @@ async function importTargets(targets, folders, silent) {
   } catch { toast('Import failed'); }
   importing = false; $('#sidefoot').textContent = '';
 }
-async function importVideoTargets(targets, folders = []) {
+async function importVideoTargets(targets, folders = [], silent = false) {
   if (videoImporting || !targets.length) return;
   videoImporting = true;
   $('#sidefoot').textContent = 'Scanning videos...';
@@ -557,9 +557,10 @@ async function importVideoTargets(targets, folders = []) {
     r.added.forEach(v => S.videos.push(v));
     S.videoFolders = S.videoFolders || [];
     folders.forEach(f => { if (!S.videoFolders.includes(f)) S.videoFolders.push(f); });
+    S.lastVideoScan = Date.now();
     save();
     render();
-    toast(r.added.length ? 'Added ' + r.added.length + ' videos' : 'No new videos found');
+    if (!silent) toast(r.added.length ? 'Added ' + r.added.length + ' videos' : 'No new videos found');
   } catch {
     toast('Video import failed');
   } finally {
@@ -805,6 +806,10 @@ const ACT = {
   'offline-pack': async () => {
     try {
       const items = await window.nyxen.importOfflinePack();
+      if (!Array.isArray(items)) {
+        toast('Offline soundscapes are unavailable: required audio or cover files are missing from this build.');
+        return;
+      }
       const known = new Set(S.tracks.map(t=>t.id));
       const fresh = items.filter(x=>!known.has(x.id));
       if(!fresh.length){toast('Offline soundscapes are already in your library');return;}
@@ -927,6 +932,6 @@ async function boot() {
     cur = track(Q.ids[Q.i]) || lt; resumePos = S.last.pos || 0; audio.src = fileUrl(cur.path); audio.playbackRate=Number(S.settings.speed||1); applyCoverAccent();
   }
   updatePlayerUI(); render(); vizLoop();
-  if (!signedIn()) showWelcome(); else { greet(false); if(S.settings.autoResume && cur) play(); if (S.settings.autoImport && S.folders.length && Date.now() - S.lastScan > 300000) importTargets(S.folders, [], true); }
+  if (!signedIn()) showWelcome(); else { greet(false); if(S.settings.autoResume && cur) play(); if (S.settings.autoImport && S.folders.length && Date.now() - S.lastScan > 300000) importTargets(S.folders, [], true); if (S.settings.autoImport && Array.isArray(S.videoFolders) && S.videoFolders.length && Date.now() - (S.lastVideoScan || 0) > 300000) importVideoTargets(S.videoFolders, [], true); }
 }
 boot();
