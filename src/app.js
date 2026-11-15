@@ -534,6 +534,7 @@ let importing = false;
 let videoImporting = false;
 let currentVideo = null;
 let videoCounted = false;
+let lastVideoSave = 0;
 async function importTargets(targets, folders, silent) {
   if (importing || !targets.length) return; importing = true; $('#sidefoot').textContent = 'Scanning...';
   try {
@@ -599,12 +600,13 @@ function initVideoPlayer() {
   player.addEventListener('timeupdate', () => {
     if (!currentVideo) return;
     if (player.currentTime >= 3) {
-      currentVideo.last = Date.now();
+      const now = Date.now();
+      currentVideo.last = now;
       if (!videoCounted && player.currentTime >= Math.min((player.duration || 0) / 2 || 30, 30)) {
         currentVideo.plays = (currentVideo.plays || 0) + 1;
         videoCounted = true;
       }
-      save();
+      if (now - lastVideoSave >= 5000) { lastVideoSave = now; save(); }
     }
   });
   player.addEventListener('error', () => {
@@ -622,16 +624,12 @@ function removeTrack(id) {
   S.tracks = S.tracks.filter((t) => t.id !== id);
   S.playlists.forEach((p) => { p.ids = p.ids.filter((x) => x !== id); });
   const wasCur = !!(cur && cur.id === id);
-  const queueIndex = Q.ids.indexOf(id);
-  if (queueIndex >= 0) {
-    Q.ids.splice(queueIndex, 1);
-    if (Q.orig) {
-      const originalIndex = Q.orig.indexOf(id);
-      if (originalIndex >= 0) Q.orig.splice(originalIndex, 1);
-    }
-    if (queueIndex < Q.i) Q.i--;
-  }
+  const removedBeforeCurrent = Q.ids.slice(0, Math.max(0, Q.i)).filter((queuedId) => queuedId === id).length;
+  Q.ids = Q.ids.filter((queuedId) => queuedId !== id);
+  if (Q.orig) Q.orig = Q.orig.filter((queuedId) => queuedId !== id);
+  Q.i = Math.max(-1, Q.i - removedBeforeCurrent);
   if (wasCur) {
+    clearTimeout(errorSkipTimer); errorSkipTimer = 0;
     cur = null;
     counted = touched = false;
     resumePos = 0;
