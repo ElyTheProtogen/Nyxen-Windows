@@ -15,7 +15,7 @@ This desktop update ports the Android Nyxen Player capabilities that have practi
 ## Platform differences / not included
 - Android haptic feedback and Android notification/media-session UI are platform-specific and are not reproduced.
 - Automatic pause on headphone disconnect is not implemented for Windows.
-- Google sign-in is not configured for the desktop build; the desktop profile remains local-only.
+- Desktop sign-in uses Nyxen email/password authentication or local guest mode.
 - Android-specific touch gestures and mobile layouts remain adapted to desktop interactions rather than copied literally.
 
 ## Validation
