@@ -171,19 +171,17 @@ async function scan(targets, known) {
       let hasCover = false;
 
       if (pic) {
-        const img = nativeImage.createFromBuffer(Buffer.from(pic.data));
-
-        if (!img.isEmpty()) {
-          const small = img.getSize().width > 400
-            ? img.resize({ width: 400, quality: 'good' })
-            : img;
-
-          await fsp.writeFile(
-            path.join(coverDir(), id + '.jpg'),
-            small.toJPEG(82)
-          );
-
-          hasCover = true;
+        try {
+          const img = nativeImage.createFromBuffer(Buffer.from(pic.data));
+          if (!img.isEmpty()) {
+            const small = img.getSize().width > 400
+              ? img.resize({ width: 400, quality: 'good' })
+              : img;
+            await fsp.writeFile(path.join(coverDir(), id + '.jpg'), small.toJPEG(82));
+            hasCover = true;
+          }
+        } catch {
+          // Invalid or unsupported artwork must not prevent importing the audio.
         }
       }
 
