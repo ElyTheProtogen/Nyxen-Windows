@@ -5,7 +5,7 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmt = (sec) => { sec = Math.max(0, Math.floor(sec || 0)); return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'); };
 const playsText = (n) => (n <= 0 ? 'Not played yet' : n === 1 ? 'Played 1 time' : `Played ${n} times`);
-const isGmail = (e) => /^[A-Za-z0-9._%+-]+@gmail\.com$/i.test((e || '').trim());
+const isEmail = (value) => { const email = (value || '').trim(); return !email || (email.includes('@') && email.lastIndexOf('.') > email.indexOf('@') + 1 && !/\s/.test(email)); };
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const b64url = (s) => btoa(String.fromCharCode(...new TextEncoder().encode(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const fileUrl = (p) => 'nyxen://file/' + b64url(p);
@@ -186,7 +186,7 @@ let saveTimer = 0;
 const save = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => { Promise.resolve(window.nyxen.saveState(S)).catch(() => toast('Could not save NyxenPlayer data')); }, 500); };
 let toastT = 0;
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 3200); }
-const signedIn = () => S.profile.name && isGmail(S.profile.email);
+const signedIn = () => !!S.profile.name;
 document.addEventListener('error', (e) => { if (e.target && e.target.tagName === 'IMG') e.target.remove(); }, true);
 
 /* ================= audio engine (real Web Audio effects) ================= */
@@ -625,10 +625,10 @@ function pickPlaylist(toAdd) {
 function greet(first) { const n = S.profile.name; toast(first || !S.firstDone ? `Welcome to NyxenPlayer, ${n}!` : `${greeting()}, ${n}`); S.firstDone = true; save(); }
 function showWelcome() {
   const w = $('#welcome'); w.classList.remove('hidden');
-  w.innerHTML = `<div class="dialog" style="text-align:center"><img class="logo-big" src="logo.png" alt=""><h2 style="margin-top:12px">Welcome to NyxenPlayer</h2><div class="sub">Your music, your way. Everything stays on this computer.</div><input class="field" id="w-name" placeholder="What should we call you?" value="${esc(S.profile.name)}"><input class="field" id="w-mail" placeholder="Gmail address (required)" value="${esc(S.profile.email)}"><div class="err" id="w-err"></div><div class="sub" style="font-size:11px">Saved only on this computer. Google sign-in is not set up in this version, so the address is only checked for format.</div><div class="actions"><button class="btn" id="w-go" style="width:100%;justify-content:center">Get started</button></div></div>`;
+  w.innerHTML = `<div class="dialog" style="text-align:center"><img class="logo-big" src="logo.png" alt=""><h2 style="margin-top:12px">Welcome to NyxenPlayer</h2><div class="sub">Your music, your way. Everything stays on this computer.</div><input class="field" id="w-name" placeholder="What should we call you?" value="${esc(S.profile.name)}"><input class="field" id="w-mail" placeholder="Email address (optional)" value="${esc(S.profile.email)}"><div class="err" id="w-err"></div><div class="sub" style="font-size:11px">Saved only on this computer. Email is optional and stored only on this computer. Google sign-in is not configured in this version.</div><div class="actions"><button class="btn" id="w-go" style="width:100%;justify-content:center">Get started</button></div></div>`;
   const submit = () => {
     const name = $('#w-name').value.trim() || 'Friend', mail = $('#w-mail').value.trim();
-    if (!isGmail(mail)) { $('#w-err').textContent = 'Enter a valid @gmail.com address'; return; }
+    if (!isEmail(mail)) { $('#w-err').textContent = 'Enter a valid email address or leave it blank'; return; }
     S.profile = { name, email: mail }; save(); w.classList.add('hidden'); w.innerHTML = ''; greet(!S.firstDone); render();
   };
   $('#w-go').addEventListener('click', submit); $('#w-mail').addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
