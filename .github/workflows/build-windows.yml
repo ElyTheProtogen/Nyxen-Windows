@@ -1,29 +1,66 @@
+
 name: Build NyxenPlayer for Windows
+
 on:
   push:
     paths:
-      - 'windows/**'
+      - 'src/**'
+      - 'build/**'
+      - 'main.js'
+      - 'preload.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'README.md'
       - '.github/workflows/build-windows.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
+    name: Build Windows Installer and Portable App
     runs-on: windows-latest
     timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: windows
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+
       - name: Install dependencies
         run: npm install
-      - name: Build installer and portable exe
+
+      - name: Build installer and portable executable
         run: npm run dist
-      - uses: actions/upload-artifact@v4
+
+      - name: Verify build outputs
+        shell: pwsh
+        run: |
+          if (!(Test-Path "dist")) {
+            throw "Build failed: dist directory was not created."
+          }
+
+          $files = Get-ChildItem -Path "dist" -Filter "*.exe" -File
+
+          if ($files.Count -eq 0) {
+            throw "Build failed: no Windows executable files were found."
+          }
+
+          Write-Host "Successfully generated:"
+          $files | ForEach-Object {
+            Write-Host "$($_.Name) - $([math]::Round($_.Length / 1MB, 2)) MB"
+          }
+
+      - name: Upload Windows builds
+        uses: actions/upload-artifact@v4
         with:
           name: NyxenPlayer-windows
-          path: windows/dist/*.exe
+          path: dist/*.exe
+          if-no-files-found: error
           retention-days: 30
