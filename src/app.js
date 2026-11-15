@@ -50,7 +50,21 @@ const THEMES = [
   { n: 'Rose', g: ['#e91e63', '#7b1038', '#000000'], s: 0.1, a: '#ff4081' },
   { n: 'Neon', g: ['#006c7a', '#012a33', '#000000'], s: 0, a: '#00e5ff' },
   { n: 'Cyberpunk', g: ['#ff2e93', '#3b0a5e', '#020b1f'], s: 0.1, a: '#00f0ff' },
-  { n: 'Mono Dark', g: ['#1a1a1a', '#0d0d0d', '#000000'], s: 0, a: '#ffffff' }
+  { n: 'Mono Dark', g: ['#1a1a1a', '#0d0d0d', '#000000'], s: 0, a: '#ffffff' },
+  { n: 'Aurora', g: ['#0f8f5f', '#3a1c71', '#08050f'], s: 0.10, a: '#7cffcb' },
+  { n: 'Gold', g: ['#7a5c00', '#3a2a00', '#000000'], s: 0, a: '#ffc53d' },
+  { n: 'Mint', g: ['#2bb39a', '#0b3d3a', '#000000'], s: 0.12, a: '#6cffd9' },
+  { n: 'Lavender', g: ['#8e7cc3', '#3b2a5f', '#0b0814'], s: 0.20, a: '#c4b5fd' },
+  { n: 'Ice', g: ['#5bc0eb', '#1b4965', '#0b132b'], s: 0.25, a: '#9ae6ff' },
+  { n: 'Lava', g: ['#ff512f', '#8b1a00', '#000000'], s: 0.10, a: '#ff7a3d' },
+  { n: 'Forest', g: ['#2d6a4f', '#081c15', '#000000'], s: 0.05, a: '#74c69d' },
+  { n: 'Peach', g: ['#ff9a8b', '#b5476b', '#2b0b2b'], s: 0.30, a: '#ffb199' },
+  { n: 'Slate', g: ['#475569', '#1e293b', '#020617'], s: 0.05, a: '#94a3b8' },
+  { n: 'Candy', g: ['#ff6fd8', '#7c3aed', '#0b0b2b'], s: 0.15, a: '#ff9ce8' },
+  { n: 'Emerald', g: ['#00b09b', '#004e3f', '#000000'], s: 0.10, a: '#2ee6a6' },
+  { n: 'Amber', g: ['#ffb347', '#7a3e00', '#000000'], s: 0.30, a: '#ffc266' },
+  { n: 'Ruby', g: ['#9b111e', '#3a0610', '#000000'], s: 0, a: '#ff4d5e' },
+  { n: 'Sky', g: ['#87ceeb', '#2f6db5', '#0a1a3a'], s: 0.35, a: '#7cc8ff' },
 ];
 const BANDS = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
 const EQ_PRESETS = {
@@ -62,9 +76,9 @@ const REVERBS = [{ n: 'Off', s: 0.1, d: 8 }, { n: 'Small room', s: 0.6, d: 3 }, 
 
 /* ================= state ================= */
 const DEFAULT = () => ({
-  v: 1, profile: { name: '', email: '' }, tracks: [], playlists: [], folders: [], nextPl: 1, lastScan: 0, firstDone: false,
-  settings: { theme: 1, cover: true, eqOn: true, gains: Array(10).fill(0), pre: 0, bass: 0, preset: 'Flat', rvPreset: 0, rvMix: 0.3, volume: 0.8, mode: 'all', sort: 'title', asc: true, cat: 'tracks' },
-  last: { id: null, pos: 0 }
+  v: 2, profile: { name: '', email: '' }, tracks: [], playlists: [], folders: [], nextPl: 1, lastScan: 0, firstDone: false, lyrics: {}, customThemes: [], customEq: {}, recentSearches: [],
+  settings: { theme: 1, wallpaper: 0, cover: true, eqOn: true, gains: Array(10).fill(0), pre: 0, bass: 0, preset: 'Flat', rvPreset: 0, rvMix: 0.3, volume: 0.8, speed: 1, autoResume: false, rememberQueue: true, autoplaySimilar: false, buttonSounds: true, sleepFade: true, autoImport: true, keepAwake: false, mode: 'all', sort: 'title', asc: true, cat: 'tracks' },
+  last: { id: null, pos: 0 }, savedQueue: [], savedQueueIndex: 0
 });
 let S = DEFAULT();
 let byId = new Map();
@@ -137,7 +151,7 @@ function loadCurrent(autoplay) {
   const t = track(Q.ids[Q.i]); if (!t) return;
   cur = t; counted = touched = false;
   audio.src = fileUrl(t.path);
-  S.last.id = t.id; S.last.pos = 0; save();
+  S.last.id = t.id; S.last.pos = 0; S.savedQueue = Q.ids.slice(); S.savedQueueIndex = Q.i; save();
   applyCoverAccent(); updatePlayerUI(); renderQueue();
   if (autoplay) play();
 }
@@ -174,6 +188,7 @@ const MODE_NAME = { all: 'Repeat all', one: 'Repeat one', order: 'In order', shu
 audio.addEventListener('play', () => { document.body.classList.add('playing'); updatePlayerUI(); });
 audio.addEventListener('pause', () => { document.body.classList.remove('playing'); if (cur) { S.last.pos = audio.currentTime; save(); } updatePlayerUI(); });
 audio.addEventListener('ended', () => {
+  if(sleepTrack){sleepTrack=false;audio.pause();toast('Sleep timer finished');if(V.page==='settings')render();return;}
   if (S.settings.mode === 'one') { audio.currentTime = 0; counted = touched = false; play(); } else next(false);
 });
 audio.addEventListener('loadedmetadata', () => { if (resumePos) { audio.currentTime = resumePos; resumePos = 0; } updateProgress(); });
@@ -281,7 +296,7 @@ function pageLibrary() {
 }
 function searchResults() {
   const q = (V.q || '').trim().toLowerCase();
-  if (!q) return `<div class="empty"><div class="art"><span class="ph">&#9834;</span></div>Find anything in your library</div>`;
+  if (!q) return S.recentSearches?.length ? `<div class="sub" style="margin:14px 0">Recent searches</div><div class="toolbar">${S.recentSearches.slice(0,8).map(x=>`<button class="chip" data-act="search-recent" data-q="${esc(x)}">${esc(x)}</button>`).join('')}</div>` : `<div class="empty"><div class="art"><span class="ph">&#9834;</span></div>Find anything in your library</div>`;
   const tokens = q.split(/\s+/), fields = V.sf === 'all' ? ['title', 'artist', 'album', 'genre'] : [V.sf];
   const res = S.tracks.filter((t) => { const hay = fields.map((f) => t[f]).join(' ').toLowerCase(); return tokens.every((x) => hay.includes(x)); });
   if (!res.length) return `<div class="empty">No results for &ldquo;${esc(q)}&rdquo;</div>`;
@@ -311,26 +326,37 @@ function pageStudio() {
 <div class="glass"><canvas class="viz" id="viz2"></canvas><div class="eq">${BANDS.map((f, i) => `<div><span>${s.gains[i] > 0 ? '+' : ''}${s.gains[i]}</span><input class="v" type="range" min="-12" max="12" step="0.5" value="${s.gains[i]}" data-band="${i}"><span>${f >= 1000 ? f / 1000 + 'k' : f}</span></div>`).join('')}</div></div>
 <div class="glass"><h3>Tone</h3>${slider('pre', 'Preamp', -12, 12, 0.5, s.pre, ' dB')}${slider('bass', 'Bass boost', 0, 12, 0.5, s.bass, ' dB')}</div>
 <div class="glass"><h3>Reverb</h3><div class="toolbar">${REVERBS.map((r, i) => `<button class="chip ${s.rvPreset === i ? 'on' : ''}" data-act="rv" data-i="${i}">${r.n}</button>`).join('')}</div>${slider('rvmix', 'Wet / dry mix', 0, 1, 0.05, s.rvMix, '')}</div>
-<button class="btn ghost" data-act="eq-reset">Reset all</button></div>`;
+<div class="toolbar"><button class="btn ghost" data-act="save-eq-preset">Save current preset</button><button class="btn ghost" data-act="eq-reset">Reset all</button></div></div>`;
 }
 function pageStats() {
   const total = S.tracks.reduce((a, t) => a + t.plays, 0), mins = Math.floor(S.tracks.reduce((a, t) => a + t.plays * t.duration, 0) / 60);
   const topS = S.tracks.filter((t) => t.plays > 0).sort((a, b) => b.plays - a.plays).slice(0, 5).map((t) => [t.title, t.plays]);
   const am = new Map(); S.tracks.forEach((t) => { if (t.plays) am.set(t.artist, (am.get(t.artist) || 0) + t.plays); });
   const topA = [...am.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const gm = new Map(); S.tracks.forEach((t) => { if(t.plays) gm.set(t.genre||'Unknown genre',(gm.get(t.genre||'Unknown genre')||0)+t.plays); });
+  const topG = [...gm.entries()].sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const hours = (mins/60).toFixed(1);
   const bars = (rows) => rows.map(([n, c]) => `<div class="bar-row"><span class="t">${esc(n)}</span><div class="track"><div class="fill" style="width:${rows[0][1] ? (c / rows[0][1]) * 100 : 0}%"></div></div><span>${c}&times;</span></div>`).join('');
-  return `<div class="page"><h1>Listening stats</h1><div class="glass split"><div class="stat"><b>${total}</b>plays</div><div class="stat"><b>${mins}</b>minutes</div><div class="stat"><b>${S.tracks.length}</b>songs</div></div>${total ? `<div class="glass"><h3>Top songs</h3>${bars(topS)}</div><div class="glass"><h3>Top artists</h3>${bars(topA)}</div>` : '<div class="sub" style="margin-top:14px">Play some songs and your stats will appear here.</div>'}</div>`;
+  return `<div class="page"><h1>Listening stats</h1><div class="glass split"><div class="stat"><b>${total}</b>plays</div><div class="stat"><b>${mins}</b>minutes</div><div class="stat"><b>${hours}</b>hours listened</div><div class="stat"><b>${S.tracks.length}</b>songs</div></div>${total ? `<div class="glass"><h3>Top songs</h3>${bars(topS)}</div><div class="glass"><h3>Top artists</h3>${bars(topA)}</div><div class="glass"><h3>Top genres</h3>${bars(topG)}</div>` : '<div class="sub" style="margin-top:14px">Play some songs and your stats will appear here.</div>'}</div>`;
 }
 const ABOUT = 'NyxenPlayer is a music player built around one simple idea: your music, your way. It plays the songs you already own, whether they are MP3, M4A, OGG, WAV or FLAC files stored on your computer, and wraps them in a fast, dark and animated design with gradient themes and a real sound studio.\n\nYour music never leaves your computer. There are no ads, no tracking and no servers. Your playlists, favorites, play counts and settings are stored only on this device, and you can delete everything at any time in Settings.\n\nMade by: [your name]    Contact: your-email@gmail.com';
-let sleepMin = 0, sleepEnd = 0, sleepTimer = 0;
+let sleepMin = 0, sleepEnd = 0, sleepTimer = 0, sleepTrack = false;
 function pageSettings() {
   const th = THEMES.map((t, i) => `<div class="sw ${S.settings.theme === i ? 'on' : ''}" data-act="theme" data-i="${i}"><i style="background:linear-gradient(180deg,${t.g.join(',')})"></i>${t.n}</div>`).join('');
+  const wallpapers = Array.from({length:8},(_,i)=>`<button class="wallpaper ${S.settings.wallpaper===i+1?'on':''}" data-act="wallpaper" data-i="${i+1}"><img src="../resources/offline/wallpapers/nyxen_wallpaper_${String(i+1).padStart(2,'0')}.png"><span>${i+1}</span></button>`).join('');
+  const toggle = (key,label,desc) => `<div class="setting-row"><div><b>${label}</b><small>${desc}</small></div><button class="chip ${S.settings[key]?'on':''}" data-act="setting-toggle" data-key="${key}">${S.settings[key]?'On':'Off'}</button></div>`;
   return `<div class="page"><h1>Settings</h1>
-<div class="glass"><h3>Account</h3><p>${esc(S.profile.name)} &middot; ${esc(S.profile.email)}</p><div class="toolbar"><button class="btn ghost" data-act="edit-profile">Edit profile</button><button class="btn ghost" data-act="sign-out">Sign out</button><button class="btn danger" data-act="wipe">Delete all my data</button></div></div>
-<div class="glass"><h3>Library</h3><p>${S.folders.length} watched folders &middot; ${S.tracks.length} songs</p><div class="toolbar"><button class="btn" data-act="import-folder">Import a folder</button><button class="btn ghost" data-act="import-files">Import files</button><button class="btn ghost" data-act="rescan">Rescan folders</button></div></div>
-<div class="glass"><h3>Appearance</h3><div class="split"><span class="grow">Match colors to album cover</span><button class="chip ${S.settings.cover ? 'on' : ''}" data-act="cover-toggle">${S.settings.cover ? 'On' : 'Off'}</button></div><div class="swatches">${th}</div></div>
-<div class="glass"><h3>Sleep timer</h3><div class="toolbar">${[0, 15, 30, 45, 60].map((m) => `<button class="chip ${sleepMin === m ? 'on' : ''}" data-act="sleep" data-m="${m}">${m ? m + ' min' : 'Off'}</button>`).join('')}</div><p>Music fades out over the last 20 seconds.</p></div>
-<div class="glass"><h3>Keyboard shortcuts</h3><p>Space: play or pause\nLeft / Right: seek 5 seconds\nCtrl + Left / Right: previous or next song\nUp / Down: volume\nM: mute\nMedia keys also work.</p></div>
+<div class="glass"><h3>Account</h3><p>${esc(S.profile.name)} &middot; ${esc(S.profile.email)}</p><div class="toolbar"><button class="btn ghost" data-act="edit-profile">Edit profile</button><button class="btn ghost" data-act="sign-out">Sign out</button><button class="btn danger" data-act="wipe">Delete all my data</button></div><p class="sub">Google sign-in is not connected in this desktop build; profile details stay local.</p></div>
+<div class="glass"><h3>Library & import</h3><p>${S.folders.length} watched folders &middot; ${S.tracks.length} songs</p><div class="toolbar"><button class="btn" data-act="import-folder">Import a folder</button><button class="btn ghost" data-act="import-files">Import files</button><button class="btn ghost" data-act="rescan">Rescan folders</button><button class="btn ghost" data-act="offline-pack">Add offline soundscapes</button></div></div>
+<div class="glass"><h3>Appearance</h3><div class="split"><span class="grow">Match colors to album cover</span><button class="chip ${S.settings.cover?'on':''}" data-act="cover-toggle">${S.settings.cover?'On':'Off'}</button></div><div class="swatches">${th}</div><h3 style="margin-top:18px">Custom theme</h3><div class="toolbar"><input class="field" id="custom-theme-name" placeholder="Theme name" maxlength="24"><input type="color" id="custom-theme-color" value="#b14bff" title="Accent color"><button class="btn ghost" data-act="save-custom-theme">Save palette</button></div><h3 style="margin-top:18px">Wallpaper collection</h3><p>Eight original Nyxen wallpapers, available offline.</p><div class="wallpaper-grid"><button class="wallpaper ${!S.settings.wallpaper?'on':''}" data-act="wallpaper" data-i="0"><span>No wallpaper</span></button>${wallpapers}</div></div>
+<div class="glass"><h3>Fonts & custom themes</h3><p>Use a local .ttf or .otf font across the desktop player. Current: ${esc(S.settings.customFontName || "System default")}</p><div class="toolbar"><button class="btn ghost" data-act="import-font">Import font</button><button class="btn ghost" data-act="reset-font">Use system font</button></div></div><div class="glass"><h3>Playback</h3>${toggle('autoResume','Resume playback on launch','Continue playing automatically when Nyxen opens.')}${toggle('rememberQueue','Save playback queue','Restore the same songs and playback position next time.')}${toggle('autoplaySimilar','Auto-play similar tracks','Continue with an unqueued artist or genre match when the queue ends.')}${toggle('sleepFade','Fade out before stopping','Gradually lower volume during the final 20 seconds of the sleep timer.')}${toggle('buttonSounds','Button sounds','Play a subtle UI sound when supported.')}${toggle('autoImport','Auto-import watched folders','Rescan watched folders automatically when Nyxen opens.')}${toggle('keepAwake','Keep display awake','Prevent the display from sleeping while music is playing.')}<div class="setting-row"><div><b>Playback speed</b><small>Adjust the playback rate from 0.5× to 2×.</small></div><select id="speed" class="field compact">${[0.5,0.75,0.9,1,1.1,1.25,1.5,1.75,2].map(v=>`<option value="${v}" ${Number(S.settings.speed||1)===v?'selected':''}>${v}×</option>`).join('')}</select></div></div>
+<div class="glass"><h3>Sleep timer</h3><div class="toolbar">${[0, 15, 30, 45, 60].map((m) => `<button class="chip ${sleepMin === m ? 'on' : ''}" data-act="sleep" data-m="${m}">${m ? m + ' min' : 'Off'}</button>`).join('')}<button class="chip ${sleepTrack?'on':''}" data-act="sleep-track">End of track</button></div><p>Music fades out over the last 20 seconds when fade-out is enabled.</p></div>
+<div class="glass"><h3>Keyboard shortcuts</h3><p>Space: play or pause
+Left / Right: seek 5 seconds
+Ctrl + Left / Right: previous or next song
+Up / Down: volume
+M: mute
+Media keys also work.</p></div>
 <div class="glass"><h3>About NyxenPlayer</h3><p>${esc(ABOUT)}</p></div></div>`;
 }
 const PAGES = { home: pageHome, library: pageLibrary, search: pageSearch, playlists: pagePlaylists, playlist: pagePlaylist, studio: pageStudio, stats: pageStats, settings: pageSettings };
@@ -349,6 +375,7 @@ function updateProgress() {
   const d = audio.duration && isFinite(audio.duration) ? audio.duration : cur ? cur.duration : 0, t = audio.currentTime || 0;
   $$('.tcur').forEach((el) => { el.textContent = fmt(t); }); $$('.tdur').forEach((el) => { el.textContent = fmt(d); });
   if (!seeking) $$('.seekin').forEach((el) => { const p = d ? (t / d) * 100 : 0; el.value = p * 10; el.style.setProperty('--p', p + '%'); });
+  updateLyricsProgress();
 }
 function controls() {
   const m = S.settings.mode, playing = !audio.paused;
@@ -362,7 +389,7 @@ function renderBar() {
 }
 function renderNP() {
   const np = $('#np'); if (!cur) { np.innerHTML = `<button class="icon close big" data-act="np-close">${svg('down', 28)}</button>`; return; }
-  np.innerHTML = `<div class="bgimg" style="${cur.cover ? `background-image:url(nyxen://cover/${cur.id})` : ''}"></div><div class="wrap"><button class="icon close big" data-act="np-close">${svg('down', 28)}</button><div class="npart">${art(cur, 'xl')}</div><h1>${esc(cur.title)}</h1><div class="sub">${esc(cur.artist)} &middot; ${esc(cur.album)}</div><div class="sub" style="color:var(--accent)">${playsText(cur.plays)}</div><canvas class="viz" id="viz1" style="max-width:640px"></canvas><div class="seekrow"><span class="tcur">0:00</span><input class="seekin" type="range" min="0" max="1000" value="0"><span class="tdur">0:00</span></div><div class="npctl">${controls()}<button class="icon" data-act="queue-toggle">${svg('list', 22)}</button></div></div>`;
+  np.innerHTML = `<div class="bgimg" style="${cur.cover ? `background-image:url(nyxen://cover/${cur.id})` : ''}"></div><div class="wrap"><button class="icon close big" data-act="np-close">${svg('down', 28)}</button><div class="npart">${art(cur, 'xl')}</div><h1>${esc(cur.title)}</h1><div class="sub">${esc(cur.artist)} &middot; ${esc(cur.album)}</div><div class="sub" style="color:var(--accent)">${playsText(cur.plays)}</div><canvas class="viz" id="viz1" style="max-width:640px"></canvas><div class="seekrow"><span class="tcur">0:00</span><input class="seekin" type="range" min="0" max="1000" value="0"><span class="tdur">0:00</span></div><div class="npctl">${controls()}<button class="icon" data-act="lyrics" title="Lyrics">LYR</button><button class="icon" data-act="edit-track" title="Edit song info">${svg('more', 22)}</button><button class="icon" data-act="queue-toggle">${svg('list', 22)}</button></div></div>`;
 }
 function updatePlayerUI() {
   renderBar(); if (!$('#np').classList.contains('off')) renderNP();
@@ -452,11 +479,12 @@ function enqueue(id, afterCurrent) {
   if (!Q.ids.length) { playIds([id], 0); return; }
   if (afterCurrent) Q.ids.splice(Q.i + 1, 0, id); else Q.ids.push(id);
   if (Q.orig) Q.orig.push(id);
+  S.savedQueue=Q.ids.slice();S.savedQueueIndex=Q.i;save();
   toast(afterCurrent ? 'Will play next' : 'Added to queue'); renderQueue();
 }
 function removeTrack(id) {
   S.tracks = S.tracks.filter((t) => t.id !== id); S.playlists.forEach((p) => { p.ids = p.ids.filter((x) => x !== id); });
-  const wasCur = cur && cur.id === id; Q.ids = Q.ids.filter((x) => x !== id); if (Q.orig) Q.orig = Q.orig.filter((x) => x !== id);
+  const wasCur = cur && cur.id === id; Q.ids = Q.ids.filter((x) => x !== id); S.savedQueue=Q.ids.slice(); if (Q.orig) Q.orig = Q.orig.filter((x) => x !== id);
   reindex(); save();
   if (wasCur) { audio.pause(); cur = null; audio.removeAttribute('src'); Q.i = Math.min(Q.i, Q.ids.length - 1); updatePlayerUI(); }
   render(); renderQueue();
@@ -464,15 +492,66 @@ function removeTrack(id) {
 function movePl(pid, i, d) { const p = S.playlists.find((x) => x.id === pid); const j = i + d; if (!p || j < 0 || j >= p.ids.length) return; [p.ids[i], p.ids[j]] = [p.ids[j], p.ids[i]]; save(); render(); }
 function setVolume(v) { S.settings.volume = clamp(v, 0, 1); muted = false; applyFx(); save(); renderBar(); updateProgress(); }
 function setSleep(m) {
-  clearInterval(sleepTimer); sleepMin = m; sleepEnd = m ? Date.now() + m * 60000 : 0; applyFx();
+  clearInterval(sleepTimer); sleepTrack=false; sleepMin = m; sleepEnd = m ? Date.now() + m * 60000 : 0; applyFx();
   if (m) {
     sleepTimer = setInterval(() => {
       const left = sleepEnd - Date.now();
       if (left <= 0) { clearInterval(sleepTimer); audio.pause(); sleepMin = 0; sleepEnd = 0; applyFx(); toast('Sleep timer finished'); if (V.page === 'settings') render(); }
-      else if (left < 20000 && nodes.master) nodes.master.gain.value = S.settings.volume * (left / 20000);
+      else if (left < 20000 && nodes.master) nodes.master.gain.value = S.settings.volume * (S.settings.sleepFade ? left / 20000 : 1);
     }, 500);
     toast(`Sleep timer: ${m} min`);
   } else toast('Sleep timer off');
+}
+function setSleepEndTrack() { clearInterval(sleepTimer); sleepMin=0; sleepEnd=0; sleepTrack=true; toast('Sleep timer set for end of track'); if(V.page==='settings')render(); }
+function applyCustomFont() {
+  const file=S.settings.customFontFile;
+  let style=$('#nyxen-font-style');
+  if(!file){if(style)style.remove();document.documentElement.style.removeProperty('--custom-font');return;}
+  if(!style){style=document.createElement('style');style.id='nyxen-font-style';document.head.appendChild(style);}
+  style.textContent=`@font-face{font-family:NyxenCustom;src:url("nyxen://font/${encodeURIComponent(file)}");font-display:swap}`;
+  document.documentElement.style.setProperty('--custom-font','NyxenCustom');
+}
+function applyWallpaper() {
+  const n = Number(S.settings.wallpaper || 0), bg = $('#bg');
+  if (!bg) return;
+  bg.style.backgroundImage = n ? `linear-gradient(90deg,rgba(0,0,0,.72),rgba(0,0,0,.62)),url('../resources/offline/wallpapers/nyxen_wallpaper_${String(n).padStart(2,'0')}.png')` : '';
+  bg.style.backgroundSize = n ? 'cover' : ''; bg.style.backgroundPosition = 'center';
+}
+function editTrack(t) {
+  if(!t) return;
+  const m=$('#modal');
+  m.innerHTML=`<div class="dialog"><h2>Edit song info</h2><label>Title<input class="field" id="edit-title" value="${esc(t.title)}"></label><label>Artist<input class="field" id="edit-artist" value="${esc(t.artist)}"></label><label>Album<input class="field" id="edit-album" value="${esc(t.album)}"></label><label>Genre<input class="field" id="edit-genre" value="${esc(t.genre)}"></label><div class="actions"><button class="btn ghost" id="edit-cancel">Cancel</button><button class="btn" id="edit-save">Save changes</button></div></div>`;
+  m.classList.remove('hidden'); $('#edit-cancel').onclick=closeModal;
+  $('#edit-save').onclick=()=>{t.title=$('#edit-title').value.trim()||t.title;t.artist=$('#edit-artist').value.trim()||'Unknown artist';t.album=$('#edit-album').value.trim()||'Unknown album';t.genre=$('#edit-genre').value.trim()||'Unknown genre';save();closeModal();render();updatePlayerUI();toast('Song information updated');};
+}
+function renderLyrics(text) {
+  if(!text) return 'No lyrics yet. Add a timed .lrc or plain .txt file for this song.';
+  const lines=[];
+  for(const raw of text.split(/\r?\n/)){
+    const matches=[...raw.matchAll(/\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]/g)];
+    const lyric=raw.replace(/\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]/g,'').trim();
+    if(matches.length){for(const m of matches){const frac=Number(('0.'+(m[3]||'0')).slice(0,5));const ms=(Number(m[1])*60+Number(m[2])+frac)*1000;lines.push({ms,text:lyric});}}
+    else if(raw.trim()) lines.push({ms:null,text:raw});
+  }
+  if(!lines.some(x=>x.ms!==null)) return lines.map(x=>`<span class="lyrics-line">${esc(x.text)}</span>`).join('');
+  lines.sort((a,b)=>(a.ms??0)-(b.ms??0));
+  return lines.map(x=>`<span class="lyrics-line" ${x.ms!==null?`data-ms="${x.ms}"`:''}>${esc(x.text||'·')}</span>`).join('');
+}
+function updateLyricsProgress() {
+  const c=$('#lyrics-content'); if(!c || !$('#modal').dataset.lyricsId) return;
+  const rows=$$('.lyrics-line[data-ms]',c); if(!rows.length) return;
+  const now=(audio.currentTime||0)*1000; let active=null;
+  rows.forEach(el=>{const ms=Number(el.dataset.ms);if(ms<=now)active=el;el.classList.toggle('active',false);});
+  if(active){active.classList.add('active');if(c.dataset.activeLine !== active.dataset.ms){c.dataset.activeLine=active.dataset.ms;active.scrollIntoView({block:'center',behavior:'smooth'});}}
+}
+function openLyrics(t) {
+  if(!t) return;
+  const m=$('#modal'), lyric=S.lyrics[t.id]||''; m.dataset.lyricsId=t.id;
+  m.innerHTML=`<div class="dialog lyrics-dialog"><div class="split"><h2 class="grow">Lyrics</h2><button class="icon" id="lyrics-close">${svg('close',20)}</button></div><div class="sub">${esc(t.title)} · ${esc(t.artist)}</div><div id="lyrics-content" class="lyrics-content">${renderLyrics(lyric)}</div><input id="lyrics-file" type="file" accept=".lrc,.txt,text/plain" hidden><div class="actions"><button class="btn ghost" id="lyrics-remove">Remove</button><button class="btn" id="lyrics-add">Add / replace lyrics</button></div></div>`;
+  m.classList.remove('hidden'); $('#lyrics-close').onclick=closeModal;
+  $('#lyrics-add').onclick=()=>$('#lyrics-file').click();
+  $('#lyrics-file').onchange=async(e)=>{const f=e.target.files[0];if(!f)return;const text=(await f.text()).slice(0,200000);S.lyrics[t.id]=text;save();$('#lyrics-content').innerHTML=renderLyrics(text);updateLyricsProgress();toast('Lyrics added');};
+  $('#lyrics-remove').onclick=()=>{delete S.lyrics[t.id];save();$('#lyrics-content').textContent='No lyrics yet.';};
 }
 function closeOverlays() { $('#np').classList.add('off'); $('#queue').classList.add('off'); $('#menu').classList.add('hidden'); }
 
@@ -480,7 +559,7 @@ function closeOverlays() { $('#np').classList.add('off'); $('#queue').classList.
 const ACT = {
   nav: (d) => go(d.page),
   play: (d) => { const l = CTX.get(+d.ctx); if (l) playIds(l, +d.i); },
-  menu: (d, e) => { const t = track(d.id); if (!t) return; const m = $('#menu'); m.dataset.id = d.id; m.innerHTML = `<button data-m="next">Play next</button><button data-m="queue">Add to queue</button><button data-m="fav">${t.fav ? 'Remove from favorites' : 'Add to favorites'}</button><button data-m="pl">Add to playlist...</button><button data-m="rm">Remove from library</button>`; m.classList.remove('hidden'); m.style.left = Math.min(e.clientX, innerWidth - 230) + 'px'; m.style.top = Math.min(e.clientY, innerHeight - 260) + 'px'; },
+  menu: (d, e) => { const t = track(d.id); if (!t) return; const m = $('#menu'); m.dataset.id = d.id; m.innerHTML = `<button data-m="next">Play next</button><button data-m="queue">Add to queue</button><button data-m="fav">${t.fav ? 'Remove from favorites' : 'Add to favorites'}</button><button data-m="pl">Add to playlist...</button><button data-m="edit">Edit song info</button><button data-m="lyrics">Add / edit lyrics</button><button data-m="rm">Remove from library</button>`; m.classList.remove('hidden'); m.style.left = Math.min(e.clientX, innerWidth - 230) + 'px'; m.style.top = Math.min(e.clientY, innerHeight - 260) + 'px'; },
   group: (d) => { V.group = { cat: S.settings.cat, name: d.name }; render(); },
   back: () => { V.group = null; render(); },
   'play-group': () => playIds(ids(groupTracks()), 0),
@@ -493,6 +572,8 @@ const ACT = {
   'import-files': async () => { const f = await window.nyxen.pickFiles(); if (f.length) importTargets(f, []); },
   rescan: () => { if (!S.folders.length) toast('No folders yet. Import a folder first.'); else importTargets(S.folders, [], false); },
   sf: (d) => { V.sf = d.f; render(); },
+  'search-recent': (d) => { V.q=d.q||'';render(); },
+
   'open-pl': (d) => go('playlist', d.pl),
   'play-pl': (d) => { const l = ids(plTracks(d.pl)); if (l.length) playIds(l, 0); else toast('Nothing here yet'); },
   'shuffle-pl': (d) => { const l = ids(plTracks(d.pl)); if (l.length) { setMode('shuffle'); playIds(l, Math.floor(Math.random() * l.length)); } else toast('Nothing here yet'); },
@@ -509,14 +590,49 @@ const ACT = {
   'np-close': () => $('#np').classList.add('off'),
   'queue-toggle': () => { const q = $('#queue'); q.classList.toggle('off'); renderQueue(); },
   'q-jump': (d) => { Q.i = +d.i; loadCurrent(true); },
-  'q-rm': (d, e) => { e.stopPropagation(); const i = +d.i; Q.ids.splice(i, 1); if (i < Q.i) Q.i--; else if (i === Q.i) { if (Q.ids.length) { Q.i = Math.min(Q.i, Q.ids.length - 1); loadCurrent(true); } else { audio.pause(); } } renderQueue(); },
+  'q-rm': (d, e) => { e.stopPropagation(); const i = +d.i; Q.ids.splice(i, 1); S.savedQueue=Q.ids.slice(); if (i < Q.i) Q.i--; else if (i === Q.i) { if (Q.ids.length) { Q.i = Math.min(Q.i, Q.ids.length - 1); loadCurrent(true); } else { audio.pause(); } } S.savedQueueIndex=Q.i;save();renderQueue(); },
   'eq-toggle': () => { S.settings.eqOn = !S.settings.eqOn; applyFx(); save(); render(); },
   'eq-preset': (d) => { S.settings.preset = d.n; S.settings.gains = EQ_PRESETS[d.n].slice(); applyFx(); save(); render(); },
   rv: (d) => { S.settings.rvPreset = +d.i; setReverb(); applyFx(); save(); render(); },
   'eq-reset': () => { Object.assign(S.settings, { gains: Array(10).fill(0), pre: 0, bass: 0, preset: 'Flat', rvPreset: 0, rvMix: 0.3, eqOn: true }); setReverb(); applyFx(); save(); render(); },
   theme: (d) => { S.settings.theme = +d.i; applyTheme(); save(); render(); },
   'cover-toggle': () => { S.settings.cover = !S.settings.cover; applyCoverAccent(); save(); render(); },
+  wallpaper: (d) => { S.settings.wallpaper = +d.i; applyWallpaper(); save(); render(); },
+  'save-custom-theme': () => {
+    const name=$('#custom-theme-name')?.value.trim(), accent=$('#custom-theme-color')?.value;
+    if(!name||!accent){toast('Enter a theme name and accent color');return;}
+    const dark=(h)=>{const n=parseInt(h.slice(1),16);return `#${[16,8,0].map(s=>Math.round(((n>>s)&255)*.28).toString(16).padStart(2,'0')).join('')}`;};
+    const theme={n:name,g:[accent,dark(accent),'#050509'],s:.12,a:accent};
+    S.customThemes=S.customThemes||[];S.customThemes.push(theme);THEMES.push(theme);S.settings.theme=THEMES.length-1;applyTheme();save();render();toast('Custom theme saved');
+  },
+  'import-font': async () => {
+    try { const font=await window.nyxen.pickFont(); if(!font)return; S.settings.customFontName=font.name;S.settings.customFontFile=font.fileName;applyCustomFont();save();render();toast('Custom font applied'); }
+    catch { toast('Could not import that font'); }
+  },
+  'reset-font': () => { delete S.settings.customFontName;delete S.settings.customFontFile;applyCustomFont();save();render();toast('System font restored'); },
+  'save-eq-preset': async () => {
+    const name=await askName('Save EQ preset','','Save preset');
+    if(!name)return;
+    S.customEq=S.customEq||{};S.customEq[name]=S.settings.gains.slice();EQ_PRESETS[name]=S.settings.gains.slice();
+    S.settings.preset=name;save();render();toast('Equalizer preset saved');
+  },
+  'setting-toggle': (d) => { const k=d.key; S.settings[k]=!S.settings[k]; if(k==='rememberQueue'&&!S.settings[k]){S.savedQueue=[];S.savedQueueIndex=0;} if(k==='keepAwake')window.nyxen.setKeepAwake(S.settings.keepAwake); save(); render(); },
+  'offline-pack': async () => {
+    try {
+      const items = await window.nyxen.importOfflinePack();
+      const known = new Set(S.tracks.map(t=>t.id));
+      const fresh = items.filter(x=>!known.has(x.id));
+      if(!fresh.length){toast('Offline soundscapes are already in your library');return;}
+      const r = await window.nyxen.scan(fresh.map(x=>x.path), S.tracks.map(t=>t.id));
+      const names = [['Aurora Sleep','Nyxen','Offline Soundscapes','Ambient'],['Blue Hour','Nyxen','Offline Soundscapes','Electronic'],['Afterglow','Nyxen','Offline Soundscapes','Ambient']];
+      r.added.forEach(t=>{const i=fresh.findIndex(x=>x.id===t.id);const n=names[i]||names[0];t.title=n[0];t.artist=n[1];t.album=n[2];t.genre=n[3];t.cover=true;S.tracks.push(t);});
+      reindex();save();render();toast(`${r.added.length} offline soundscapes added`);
+    }catch(err){toast('Could not import the offline soundscapes');}
+  },
+  lyrics: () => openLyrics(cur),
+  'edit-track': () => editTrack(cur),
   sleep: (d) => { setSleep(+d.m); render(); },
+  'sleep-track': () => setSleepEndTrack(),
   'edit-profile': () => showWelcome(),
   'sign-out': () => { S.profile = { name: '', email: '' }; save(); showWelcome(); },
   wipe: async () => {
@@ -528,9 +644,21 @@ const ACT = {
 const MENU = {
   next: (id) => enqueue(id, true), queue: (id) => enqueue(id, false),
   fav: (id) => { const t = track(id); if (t) { t.fav = !t.fav; save(); updatePlayerUI(); render(); } },
-  pl: (id) => pickPlaylist([id]),
+  pl: (id) => pickPlaylist([id]), edit: (id) => editTrack(track(id)), lyrics: (id) => openLyrics(track(id)),
   rm: async (id) => { const t = track(id); if (t && await confirmBox('Remove from library?', `"${t.title}" will be removed from NyxenPlayer. The file stays on your computer.`, 'Remove')) removeTrack(id); }
 };
+function uiClick() {
+  if (!S.settings.buttonSounds || !ac) return;
+  try {
+    ac.resume();
+    const osc = ac.createOscillator(), gain = ac.createGain();
+    osc.type = 'sine'; osc.frequency.value = 760;
+    gain.gain.setValueAtTime(.018, ac.currentTime);
+    gain.gain.exponentialRampToValueAtTime(.0001, ac.currentTime + .035);
+    osc.connect(gain); gain.connect(ac.destination);
+    osc.start(); osc.stop(ac.currentTime + .04);
+  } catch {}
+}
 document.addEventListener('click', (e) => {
   const mb = e.target.closest('#menu [data-m]');
   if (mb) { const id = $('#menu').dataset.id; $('#menu').classList.add('hidden'); MENU[mb.dataset.m](id); return; }
@@ -547,7 +675,8 @@ document.addEventListener('input', (e) => {
   else if (t.id === 'pre') { S.settings.pre = +t.value; $('#pre-v').textContent = t.value + ' dB'; applyFx(); save(); }
   else if (t.id === 'bass') { S.settings.bass = +t.value; $('#bass-v').textContent = t.value + ' dB'; applyFx(); save(); }
   else if (t.id === 'rvmix') { S.settings.rvMix = +t.value; $('#rvmix-v').textContent = t.value; applyFx(); save(); }
-  else if (t.id === 'vol') { S.settings.volume = +t.value / 100; muted = false; applyFx(); save(); }
+  else if (t.id === 'speed') { S.settings.speed = +t.value; audio.playbackRate = +t.value; save(); }
+   else if (t.id === 'vol') { S.settings.volume = +t.value / 100; muted = false; applyFx(); save(); }
   else if (t.classList && t.classList.contains('seekin')) { seeking = true; const d = audio.duration || (cur && cur.duration) || 0; $$('.tcur').forEach((el) => { el.textContent = fmt((t.value / 1000) * d); }); }
 });
 document.addEventListener('change', (e) => {
@@ -557,7 +686,7 @@ document.addEventListener('change', (e) => {
 document.addEventListener('keydown', (e) => {
   const tag = (e.target.tagName || '').toLowerCase();
   if (e.key === 'Escape') { closeOverlays(); return; }
-  if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
+  if (tag === 'input' || tag === 'select' || tag === 'textarea') { if(e.key==='Enter' && e.target.id==='q') rememberSearch(); return; }
   if (e.code === 'Space') { e.preventDefault(); toggle(); }
   else if (e.key === 'ArrowRight') { if (e.ctrlKey) next(true); else audio.currentTime += 5; }
   else if (e.key === 'ArrowLeft') { if (e.ctrlKey) prev(); else audio.currentTime -= 5; }
@@ -570,13 +699,21 @@ document.addEventListener('keydown', (e) => {
 async function boot() {
   const saved = await window.nyxen.loadState();
   if (saved) { const d = DEFAULT(); S = { ...d, ...saved, settings: { ...d.settings, ...saved.settings } }; }
-  reindex(); initAudio(); applyTheme();
+  reindex();
+  (S.customThemes||[]).forEach(t=>{if(t&&t.n&&t.a&&Array.isArray(t.g)&&!THEMES.some(x=>x.n===t.n&&x.a===t.a))THEMES.push(t);});
+  Object.assign(EQ_PRESETS,S.customEq||{});
+  initAudio(); applyTheme(); applyWallpaper(); applyCustomFont(); window.nyxen.setKeepAwake(!!S.settings.keepAwake);
   $('#nav').innerHTML = NAV.map(([p, n, ic]) => `<button class="navb" data-act="nav" data-page="${p}">${svg(ic, 22)}<span>${n}</span></button>`).join('');
   window.nyxen.onScanProgress((p) => { $('#sidefoot').textContent = `Scanning ${p.done} / ${p.total}...`; });
   window.nyxen.onCommand((c) => { if (c === 'toggle') toggle(); else if (c === 'next') next(true); else if (c === 'prev') prev(); else if (c === 'stop') audio.pause(); });
   const lt = S.last.id && track(S.last.id);
-  if (lt) { Q = { ids: ids(sortTracks(S.tracks)), i: 0, orig: null }; Q.i = Math.max(0, Q.ids.indexOf(lt.id)); cur = lt; resumePos = S.last.pos || 0; audio.src = fileUrl(lt.path); applyCoverAccent(); }
+  if (lt) {
+    const restored = S.settings.rememberQueue && Array.isArray(S.savedQueue) ? S.savedQueue.filter(id=>track(id)) : [];
+    Q = { ids: restored.length ? restored : ids(sortTracks(S.tracks)), i: 0, orig: null };
+    Q.i = restored.length ? clamp(Number(S.savedQueueIndex||0),0,Q.ids.length-1) : Math.max(0,Q.ids.indexOf(lt.id));
+    cur = track(Q.ids[Q.i]) || lt; resumePos = S.last.pos || 0; audio.src = fileUrl(cur.path); audio.playbackRate=Number(S.settings.speed||1); applyCoverAccent();
+  }
   updatePlayerUI(); render(); vizLoop();
-  if (!signedIn()) showWelcome(); else { greet(false); if (S.folders.length && Date.now() - S.lastScan > 300000) importTargets(S.folders, [], true); }
+  if (!signedIn()) showWelcome(); else { greet(false); if(S.settings.autoResume && cur) play(); if (S.settings.autoImport && S.folders.length && Date.now() - S.lastScan > 300000) importTargets(S.folders, [], true); }
 }
 boot();
