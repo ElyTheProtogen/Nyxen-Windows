@@ -76,7 +76,7 @@ const REVERBS = [{ n: 'Off', s: 0.1, d: 8 }, { n: 'Small room', s: 0.6, d: 3 }, 
 
 /* ================= state ================= */
 const DEFAULT = () => ({
-  v: 2, profile: { name: '', email: '' }, tracks: [], playlists: [], folders: [], nextPl: 1, lastScan: 0, firstDone: false, lyrics: {}, customThemes: [], customEq: {}, recentSearches: [],
+  v: 2, profile: { name: '', email: '' }, tracks: [], videos: [], videoFolders: [], playlists: [], folders: [], nextPl: 1, lastScan: 0, firstDone: false, lyrics: {}, customThemes: [], customEq: {}, recentSearches: [],
   settings: { theme: 1, wallpaper: 0, cover: true, eqOn: true, gains: Array(10).fill(0), pre: 0, bass: 0, preset: 'Flat', rvPreset: 0, rvMix: 0.3, volume: 0.8, speed: 1, autoResume: false, rememberQueue: true, autoplaySimilar: false, buttonSounds: true, sleepFade: true, autoImport: true, keepAwake: false, mode: 'all', sort: 'title', asc: true, cat: 'tracks' },
   last: { id: null, pos: 0 }, savedQueue: [], savedQueueIndex: 0
 });
@@ -294,6 +294,13 @@ function pageLibrary() {
   const groups = [...map.entries()].sort((a, b) => a[0].toLowerCase().localeCompare(b[0].toLowerCase()));
   return h + `<div class="grid">${groups.map(([name, ts]) => `<div class="card" data-act="group" data-name="${esc(name)}">${art(ts.find((t) => t.cover) || ts[0], 'lg')}<b>${esc(name)}</b><span>${ts.length} songs</span></div>`).join('')}</div></div>`;
 }
+function pageVideos() {
+  const videos = [...(S.videos || [])].sort((a, b) => (b.added || 0) - (a.added || 0));
+  let h = '<div class="page"><div class="split"><div class="grow"><h1>Videos</h1><div class="sub">' + videos.length + ' videos in your library</div></div><button class="btn" data-act="import-video-files">Import videos</button><button class="btn ghost" data-act="import-video-folder">Import folder</button></div>';
+  if (!videos.length) return h + emptyState('No videos yet', 'Import MP4, M4V, WebM or MOV files to watch them in NyxenPlayer.', 'Import videos', 'import-video-files') + '</div>';
+  h += videos.map(v => '<div class="video-row"><div class="video-mark">▶</div><div class="tmeta"><b>' + esc(v.title) + '</b><span>' + esc(v.path.split(/[\\/]/).pop()) + '</span><em>' + playsText(v.plays || 0) + '</em></div><button class="btn" data-act="play-video" data-id="' + esc(v.id) + '">Play</button><button class="icon" data-act="remove-video" data-id="' + esc(v.id) + '" title="Remove from library">' + svg('del', 19) + '</button></div>').join('');
+  return h + '</div>';
+}
 function searchResults() {
   const q = (V.q || '').trim().toLowerCase();
   if (!q) return S.recentSearches?.length ? `<div class="sub" style="margin:14px 0">Recent searches</div><div class="toolbar">${S.recentSearches.slice(0,8).map(x=>`<button class="chip" data-act="search-recent" data-q="${esc(x)}">${esc(x)}</button>`).join('')}</div>` : `<div class="empty"><div class="art"><span class="ph">&#9834;</span></div>Find anything in your library</div>`;
@@ -347,7 +354,7 @@ function pageSettings() {
   const toggle = (key,label,desc) => `<div class="setting-row"><div><b>${label}</b><small>${desc}</small></div><button class="chip ${S.settings[key]?'on':''}" data-act="setting-toggle" data-key="${key}">${S.settings[key]?'On':'Off'}</button></div>`;
   return `<div class="page"><h1>Settings</h1>
 <div class="glass"><h3>Account</h3><p>${esc(S.profile.name)} &middot; ${esc(S.profile.email)}</p><div class="toolbar"><button class="btn ghost" data-act="edit-profile">Edit profile</button><button class="btn ghost" data-act="sign-out">Sign out</button><button class="btn danger" data-act="wipe">Delete all my data</button></div><p class="sub">Google sign-in is not connected in this desktop build; profile details stay local.</p></div>
-<div class="glass"><h3>Library & import</h3><p>${S.folders.length} watched folders &middot; ${S.tracks.length} songs</p><div class="toolbar"><button class="btn" data-act="import-folder">Import a folder</button><button class="btn ghost" data-act="import-files">Import files</button><button class="btn ghost" data-act="rescan">Rescan folders</button><button class="btn ghost" data-act="offline-pack">Add offline soundscapes</button></div></div>
+<div class="glass"><h3>Library & import</h3><p>${S.folders.length} watched folders &middot; ${S.tracks.length} songs</p><div class="toolbar"><button class="btn" data-act="import-folder">Import a folder</button><button class="btn ghost" data-act="import-files">Import files</button><button class="btn ghost" data-act="rescan">Rescan folders</button><button class="btn ghost" data-act="offline-pack">Add offline soundscapes</button><button class="btn ghost" data-act="import-video-files">Import videos</button></div></div>
 <div class="glass"><h3>Appearance</h3><div class="split"><span class="grow">Match colors to album cover</span><button class="chip ${S.settings.cover?'on':''}" data-act="cover-toggle">${S.settings.cover?'On':'Off'}</button></div><div class="swatches">${th}</div><h3 style="margin-top:18px">Custom theme</h3><div class="toolbar"><input class="field" id="custom-theme-name" placeholder="Theme name" maxlength="24"><input type="color" id="custom-theme-color" value="#b14bff" title="Accent color"><button class="btn ghost" data-act="save-custom-theme">Save palette</button></div><h3 style="margin-top:18px">Wallpaper collection</h3><p>Eight original Nyxen wallpapers, available offline.</p><div class="wallpaper-grid"><button class="wallpaper ${!S.settings.wallpaper?'on':''}" data-act="wallpaper" data-i="0"><span>No wallpaper</span></button>${wallpapers}</div></div>
 <div class="glass"><h3>Fonts & custom themes</h3><p>Use a local .ttf or .otf font across the desktop player. Current: ${esc(S.settings.customFontName || "System default")}</p><div class="toolbar"><button class="btn ghost" data-act="import-font">Import font</button><button class="btn ghost" data-act="reset-font">Use system font</button></div></div><div class="glass"><h3>Playback</h3>${toggle('autoResume','Resume playback on launch','Continue playing automatically when Nyxen opens.')}${toggle('rememberQueue','Save playback queue','Restore the same songs and playback position next time.')}${toggle('autoplaySimilar','Auto-play similar tracks','Continue with an unqueued artist or genre match when the queue ends.')}${toggle('sleepFade','Fade out before stopping','Gradually lower volume during the final 20 seconds of the sleep timer.')}${toggle('buttonSounds','Button sounds','Play a subtle UI sound when supported.')}${toggle('autoImport','Auto-import watched folders','Rescan watched folders automatically when Nyxen opens.')}${toggle('keepAwake','Keep display awake','Prevent the display from sleeping while music is playing.')}<div class="setting-row"><div><b>Playback speed</b><small>Adjust the playback rate from 0.5× to 2×.</small></div><select id="speed" class="field compact">${[0.5,0.75,0.9,1,1.1,1.25,1.5,1.75,2].map(v=>`<option value="${v}" ${Number(S.settings.speed||1)===v?'selected':''}>${v}×</option>`).join('')}</select></div></div>
 <div class="glass"><h3>Sleep timer</h3><div class="toolbar">${[0, 15, 30, 45, 60].map((m) => `<button class="chip ${sleepMin === m ? 'on' : ''}" data-act="sleep" data-m="${m}">${m ? m + ' min' : 'Off'}</button>`).join('')}<button class="chip ${sleepTrack?'on':''}" data-act="sleep-track">End of track</button></div><p>Music fades out over the last 20 seconds when fade-out is enabled.</p></div>
@@ -359,8 +366,8 @@ M: mute
 Media keys also work.</p></div>
 <div class="glass"><h3>About NyxenPlayer</h3><p>${esc(ABOUT)}</p></div></div>`;
 }
-const PAGES = { home: pageHome, library: pageLibrary, search: pageSearch, playlists: pagePlaylists, playlist: pagePlaylist, studio: pageStudio, stats: pageStats, settings: pageSettings };
-const NAV = [['home', 'Home', 'home'], ['library', 'Library', 'lib'], ['search', 'Search', 'search'], ['playlists', 'Playlists', 'list'], ['studio', 'Audio Studio', 'eq'], ['stats', 'Stats', 'chart'], ['settings', 'Settings', 'gear']];
+const PAGES = { home: pageHome, library: pageLibrary, videos: pageVideos, search: pageSearch, playlists: pagePlaylists, playlist: pagePlaylist, studio: pageStudio, stats: pageStats, settings: pageSettings };
+const NAV = [['home', 'Home', 'home'], ['library', 'Library', 'lib'], ['videos', 'Videos', 'play'], ['search', 'Search', 'search'], ['playlists', 'Playlists', 'list'], ['studio', 'Audio Studio', 'eq'], ['stats', 'Stats', 'chart'], ['settings', 'Settings', 'gear']];
 function go(page, arg = null) { V.page = page; V.arg = arg; V.group = null; render(); }
 function render() {
   const m = $('#main'); m.innerHTML = PAGES[V.page](); m.scrollTop = 0;
@@ -463,6 +470,9 @@ function showWelcome() {
 
 /* ================= library actions ================= */
 let importing = false;
+let videoImporting = false;
+let currentVideo = null;
+let videoCounted = false;
 async function importTargets(targets, folders, silent) {
   if (importing || !targets.length) return; importing = true; $('#sidefoot').textContent = 'Scanning...';
   try {
@@ -474,6 +484,71 @@ async function importTargets(targets, folders, silent) {
     render();
   } catch { toast('Import failed'); }
   importing = false; $('#sidefoot').textContent = '';
+}
+async function importVideoTargets(targets, folders = []) {
+  if (videoImporting || !targets.length) return;
+  videoImporting = true;
+  $('#sidefoot').textContent = 'Scanning videos...';
+  try {
+    const r = await window.nyxen.scanVideos(targets, (S.videos || []).map(v => v.id));
+    S.videos = S.videos || [];
+    r.added.forEach(v => S.videos.push(v));
+    S.videoFolders = S.videoFolders || [];
+    folders.forEach(f => { if (!S.videoFolders.includes(f)) S.videoFolders.push(f); });
+    save();
+    render();
+    toast(r.added.length ? 'Added ' + r.added.length + ' videos' : 'No new videos found');
+  } catch {
+    toast('Video import failed');
+  } finally {
+    videoImporting = false;
+    $('#sidefoot').textContent = '';
+  }
+}
+function playVideo(id) {
+  const item = (S.videos || []).find(v => v.id === id);
+  if (!item) return;
+  audio.pause();
+  const player = $('#nyxen-video');
+  currentVideo = item;
+  videoCounted = false;
+  $('#video-title').textContent = item.title;
+  $('#video-player').classList.remove('off');
+  player.src = fileUrl(item.path);
+  player.load();
+  player.play().catch(() => toast('This video could not be played. Check its format or file location.'));
+}
+function closeVideoPlayer() {
+  const player = $('#nyxen-video');
+  player.pause();
+  player.removeAttribute('src');
+  player.load();
+  currentVideo = null;
+  $('#video-player').classList.add('off');
+}
+function initVideoPlayer() {
+  const player = $('#nyxen-video');
+  $('#video-back').addEventListener('click', closeVideoPlayer);
+  $('#video-fullscreen').addEventListener('click', async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await $('.video-screen').requestFullscreen();
+    } catch { toast('Fullscreen is unavailable'); }
+  });
+  player.addEventListener('timeupdate', () => {
+    if (!currentVideo) return;
+    if (player.currentTime >= 3) {
+      currentVideo.last = Date.now();
+      if (!videoCounted && player.currentTime >= Math.min((player.duration || 0) / 2 || 30, 30)) {
+        currentVideo.plays = (currentVideo.plays || 0) + 1;
+        videoCounted = true;
+      }
+      save();
+    }
+  });
+  player.addEventListener('error', () => {
+    if (currentVideo) toast('Cannot play "' + currentVideo.title + '". The file may have moved or use an unsupported codec.');
+  });
 }
 function enqueue(id, afterCurrent) {
   if (!Q.ids.length) { playIds([id], 0); return; }
@@ -570,6 +645,16 @@ const ACT = {
   'go-fav': () => { S.settings.cat = 'favorites'; go('library'); },
   'import-folder': async () => { const f = await window.nyxen.pickFolder(); if (f) importTargets([f], [f]); },
   'import-files': async () => { const f = await window.nyxen.pickFiles(); if (f.length) importTargets(f, []); },
+  'import-video-files': async () => { const f = await window.nyxen.pickVideoFiles(); if (f.length) importVideoTargets(f); },
+  'import-video-folder': async () => { const f = await window.nyxen.pickFolder(); if (f) importVideoTargets([f], [f]); },
+  'play-video': (d) => playVideo(d.id),
+  'remove-video': async (d) => {
+    const v = (S.videos || []).find(x => x.id === d.id);
+    if (!v || !await confirmBox('Remove video?', '"' + v.title + '" will be removed from NyxenPlayer. The file stays on your computer.', 'Remove')) return;
+    if (currentVideo && currentVideo.id === v.id) closeVideoPlayer();
+    S.videos = S.videos.filter(x => x.id !== v.id);
+    save(); render();
+  },
   rescan: () => { if (!S.folders.length) toast('No folders yet. Import a folder first.'); else importTargets(S.folders, [], false); },
   sf: (d) => { V.sf = d.f; render(); },
   'search-recent': (d) => { V.q=d.q||'';render(); },
@@ -685,7 +770,7 @@ document.addEventListener('change', (e) => {
 });
 document.addEventListener('keydown', (e) => {
   const tag = (e.target.tagName || '').toLowerCase();
-  if (e.key === 'Escape') { closeOverlays(); return; }
+  if (e.key === 'Escape') { if (!$('#video-player').classList.contains('off')) closeVideoPlayer(); closeOverlays(); return; }
   if (tag === 'input' || tag === 'select' || tag === 'textarea') { if(e.key==='Enter' && e.target.id==='q') rememberSearch(); return; }
   if (e.code === 'Space') { e.preventDefault(); toggle(); }
   else if (e.key === 'ArrowRight') { if (e.ctrlKey) next(true); else audio.currentTime += 5; }
@@ -702,7 +787,7 @@ async function boot() {
   reindex();
   (S.customThemes||[]).forEach(t=>{if(t&&t.n&&t.a&&Array.isArray(t.g)&&!THEMES.some(x=>x.n===t.n&&x.a===t.a))THEMES.push(t);});
   Object.assign(EQ_PRESETS,S.customEq||{});
-  initAudio(); applyTheme(); applyWallpaper(); applyCustomFont(); window.nyxen.setKeepAwake(!!S.settings.keepAwake);
+  initAudio(); initVideoPlayer(); applyTheme(); applyWallpaper(); applyCustomFont(); window.nyxen.setKeepAwake(!!S.settings.keepAwake);
   $('#nav').innerHTML = NAV.map(([p, n, ic]) => `<button class="navb" data-act="nav" data-page="${p}">${svg(ic, 22)}<span>${n}</span></button>`).join('');
   window.nyxen.onScanProgress((p) => { $('#sidefoot').textContent = `Scanning ${p.done} / ${p.total}...`; });
   window.nyxen.onCommand((c) => { if (c === 'toggle') toggle(); else if (c === 'next') next(true); else if (c === 'prev') prev(); else if (c === 'stop') audio.pause(); });
