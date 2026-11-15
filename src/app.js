@@ -80,6 +80,97 @@ const DEFAULT = () => ({
   settings: { theme: 1, wallpaper: 0, cover: true, eqOn: true, gains: Array(10).fill(0), pre: 0, bass: 0, preset: 'Flat', rvPreset: 0, rvMix: 0.3, volume: 0.8, speed: 1, autoResume: false, rememberQueue: true, autoplaySimilar: false, buttonSounds: true, sleepFade: true, autoImport: true, keepAwake: false, mode: 'all', sort: 'title', asc: true, cat: 'tracks' },
   last: { id: null, pos: 0 }, savedQueue: [], savedQueueIndex: 0
 });
+function normalizeState(saved) {
+  const d = DEFAULT();
+  if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return d;
+  const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
+  const finite = (value, fallback, min = -Infinity, max = Infinity) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? clamp(n, min, max) : fallback;
+  };
+  const cleanTrack = (item) => {
+    if (!isObject(item) || typeof item.id !== 'string' || typeof item.path !== 'string') return null;
+    return {
+      ...item,
+      title: String(item.title || item.path.split(/[\\\\/]/).pop() || 'Untitled'),
+      artist: String(item.artist || 'Unknown artist'),
+      album: String(item.album || 'Unknown album'),
+      genre: String(item.genre || 'Unknown genre'),
+      duration: finite(item.duration, 0, 0),
+      plays: Math.floor(finite(item.plays, 0, 0)),
+      last: finite(item.last, 0, 0),
+      added: finite(item.added, Date.now(), 0),
+      fav: !!item.fav,
+      cover: !!item.cover
+    };
+  };
+  const tracks = (Array.isArray(saved.tracks) ? saved.tracks : []).map(cleanTrack).filter(Boolean);
+  const videos = (Array.isArray(saved.videos) ? saved.videos : []).filter((item) => isObject(item) && typeof item.id === 'string' && typeof item.path === 'string').map((item) => ({
+    ...item,
+    title: String(item.title || item.path.split(/[\\\\/]/).pop() || 'Untitled video'),
+    added: finite(item.added, Date.now(), 0),
+    plays: Math.floor(finite(item.plays, 0, 0)),
+    last: finite(item.last, 0, 0),
+    fav: !!item.fav,
+    type: 'video'
+  }));
+  const playlists = (Array.isArray(saved.playlists) ? saved.playlists : []).filter((item) => isObject(item) && typeof item.id === 'string').map((item) => ({
+    id: item.id,
+    name: String(item.name || 'Untitled playlist'),
+    ids: Array.isArray(item.ids) ? item.ids.filter((id) => typeof id === 'string') : []
+  }));
+  const settings = { ...d.settings, ...(isObject(saved.settings) ? saved.settings : {}) };
+  settings.gains = Array.isArray(settings.gains) && settings.gains.length === 10
+    ? settings.gains.map((value) => finite(value, 0, -12, 12))
+    : d.settings.gains.slice();
+  settings.theme = Math.floor(finite(settings.theme, d.settings.theme, 0));
+  settings.wallpaper = Math.floor(finite(settings.wallpaper, 0, 0, 8));
+  settings.volume = finite(settings.volume, d.settings.volume, 0, 1);
+  settings.speed = finite(settings.speed, 1, 0.5, 2);
+  settings.pre = finite(settings.pre, 0, -12, 12);
+  settings.bass = finite(settings.bass, 0, 0, 12);
+  settings.rvMix = finite(settings.rvMix, 0.3, 0, 1);
+  settings.rvPreset = Math.floor(finite(settings.rvPreset, 0, 0, REVERBS.length - 1));
+  settings.mode = ['all', 'one', 'order', 'shuffle'].includes(settings.mode) ? settings.mode : 'all';
+  settings.sort = ['title', 'artist', 'album', 'duration', 'added', 'plays'].includes(settings.sort) ? settings.sort : 'title';
+  settings.cat = ['tracks', 'albums', 'artists', 'genres', 'favorites'].includes(settings.cat) ? settings.cat : 'tracks';
+  const customEq = {};
+  if (isObject(saved.customEq)) {
+    for (const [name, values] of Object.entries(saved.customEq)) {
+      if (!['__proto__', 'prototype', 'constructor'].includes(name) && Array.isArray(values) && values.length === 10 && values.every((v) => Number.isFinite(Number(v)))) {
+        customEq[name] = values.map((v) => finite(v, 0, -12, 12));
+      }
+    }
+  }
+  return {
+    ...d,
+    ...saved,
+    profile: {
+      name: typeof saved.profile?.name === 'string' ? saved.profile.name : '',
+      email: typeof saved.profile?.email === 'string' ? saved.profile.email : ''
+    },
+    tracks,
+    videos,
+    videoFolders: Array.isArray(saved.videoFolders) ? saved.videoFolders.filter((item) => typeof item === 'string') : [],
+    playlists,
+    folders: Array.isArray(saved.folders) ? saved.folders.filter((item) => typeof item === 'string') : [],
+    nextPl: Math.max(1, Math.floor(finite(saved.nextPl, 1, 1))),
+    lastScan: finite(saved.lastScan, 0, 0),
+    lastVideoScan: finite(saved.lastVideoScan, 0, 0),
+    firstDone: !!saved.firstDone,
+    lyrics: isObject(saved.lyrics) ? Object.fromEntries(Object.entries(saved.lyrics).filter(([id, value]) => typeof id === 'string' && typeof value === 'string')) : {},
+    customThemes: Array.isArray(saved.customThemes) ? saved.customThemes.filter((theme) => isObject(theme) && typeof theme.n === 'string' && typeof theme.a === 'string' && Array.isArray(theme.g) && theme.g.length === 3 && theme.g.every((color) => typeof color === 'string')) : [],
+    customEq,
+    recentSearches: Array.isArray(saved.recentSearches) ? saved.recentSearches.filter((item) => typeof item === 'string').slice(0, 50) : [],
+    settings,
+    last: {
+      id: typeof saved.last?.id === 'string' ? saved.last.id : null,
+      pos: finite(saved.last?.pos, 0, 0)
+    },
+    savedQueue: Array.isArray(saved.savedQueue) ? saved.savedQueue.filter((id) => typeof id === 'string') : [],
+    savedQueueIndex: Math.max(0, Math.floor(finite(saved.savedQueueIndex, 0, 0)))
+  };
+}
 let S = DEFAULT();
 let byId = new Map();
 const reindex = () => { byId = new Map(S.tracks.map((t) => [t.id, t])); };
@@ -916,7 +1007,7 @@ document.addEventListener('keydown', (e) => {
 /* ================= boot ================= */
 async function boot() {
   const saved = await window.nyxen.loadState();
-  if (saved) { const d = DEFAULT(); S = { ...d, ...saved, settings: { ...d.settings, ...saved.settings } }; }
+  S = normalizeState(saved);
   reindex();
   (S.customThemes||[]).forEach(t=>{if(t&&t.n&&t.a&&Array.isArray(t.g)&&!THEMES.some(x=>x.n===t.n&&x.a===t.a))THEMES.push(t);});
   Object.assign(EQ_PRESETS,S.customEq||{});
