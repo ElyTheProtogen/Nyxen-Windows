@@ -18,6 +18,7 @@ const fs = require('fs');
 const fsp = fs.promises;
 const crypto = require('crypto');
 const { pathToFileURL } = require('url');
+const { Readable } = require('stream');
 
 // nyxen:// serves covers, audio and video files with CORS headers.
 protocol.registerSchemesAsPrivileged([
@@ -80,6 +81,67 @@ function withCors(res) {
     statusText: res.statusText,
     headers
   });
+}
+
+async function mediaResponse(req, filePath) {
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+    'Access-Control-Allow-Headers': 'Range, Content-Type',
+    'Access-Control-Expose-Headers': 'Accept-Ranges, Content-Length, Content-Range',
+    'Accept-Ranges': 'bytes',
+    'Cache-Control': 'no-cache',
+    'Content-Disposition': 'inline',
+    'X-Content-Type-Options': 'nosniff'
+  };
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders });
+  if (!['GET', 'HEAD'].includes(req.method)) return new Response('method not allowed', { status: 405, headers: corsHeaders });
+  if (!allowedMediaPaths.has(mediaPathKey(filePath))) return new Response('forbidden', { status: 403, headers: corsHeaders });
+
+  let stat;
+  try { stat = await fsp.stat(filePath); } catch { return new Response('not found', { status: 404, headers: corsHeaders }); }
+  if (!stat.isFile()) return new Response('not found', { status: 404, headers: corsHeaders });
+
+  const mime = {
+    '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.aac': 'audio/aac',
+    '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.opus': 'audio/ogg',
+    '.flac': 'audio/flac', '.mp4': 'video/mp4', '.m4v': 'video/mp4',
+    '.webm': 'video/webm', '.mov': 'video/quicktime'
+  }[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
+  const headers = { ...corsHeaders, 'Content-Type': mime, 'Content-Length': String(stat.size) };
+  const range = req.headers.get('range');
+  let start = 0;
+  let end = Math.max(0, stat.size - 1);
+  let status = 200;
+
+  if (range) {
+    const match = /^bytes=(\\d*)-(\\d*)$/.exec(range.trim());
+    if (!match || (!match[1] && !match[2]) || stat.size === 0) {
+      return new Response(null, { status: 416, headers: { ...headers, 'Content-Range': `bytes */${stat.size}`, 'Content-Length': '0' } });
+    }
+    if (!match[1]) {
+      const suffix = Number(match[2]);
+      if (!Number.isSafeInteger(suffix) || suffix <= 0) {
+        return new Response(null, { status: 416, headers: { ...headers, 'Content-Range': `bytes */${stat.size}`, 'Content-Length': '0' } });
+      }
+      start = Math.max(0, stat.size - suffix);
+      end = stat.size - 1;
+    } else {
+      start = Number(match[1]);
+      end = match[2] ? Number(match[2]) : stat.size - 1;
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start >= stat.size || end < start) {
+        return new Response(null, { status: 416, headers: { ...headers, 'Content-Range': `bytes */${stat.size}`, 'Content-Length': '0' } });
+      }
+      end = Math.min(end, stat.size - 1);
+    }
+    status = 206;
+    headers['Content-Range'] = `bytes ${start}-${end}/${stat.size}`;
+    headers['Content-Length'] = String(end - start + 1);
+  }
+
+  if (req.method === 'HEAD') return new Response(null, { status, headers });
+  const stream = stat.size === 0 ? fs.createReadStream(filePath) : fs.createReadStream(filePath, { start, end });
+  return new Response(Readable.toWeb(stream), { status, headers });
 }
 
 function createWindow() {
@@ -546,16 +608,7 @@ app.whenReady().then(() => {
           u.pathname.slice(1),
           'base64url'
         ).toString('utf8');
-        if (!allowedMediaPaths.has(mediaPathKey(p))) {
-          return new Response('forbidden', { status: 403 });
-        }
-
-        return withCors(
-          await net.fetch(
-            pathToFileURL(p).toString(),
-            { headers: req.headers }
-          )
-        );
+        return mediaResponse(req, p);
       }
     } catch {
       // Invalid or inaccessible resource.
