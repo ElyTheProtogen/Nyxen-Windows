@@ -650,6 +650,15 @@ app.whenReady().then(() => {
         );
       }
 
+      if (u.hostname === 'wallpaper') {
+        const name = path.basename(decodeURIComponent(u.pathname));
+        if (!/^nyxen_wallpaper_0[1-8]\\.png$/.test(name)) {
+          return new Response('not found', { status: 404 });
+        }
+        const f = path.join(__dirname, 'resources', 'offline', 'wallpapers', name);
+        return withCors(await net.fetch(pathToFileURL(f).toString()));
+      }
+
       if (u.hostname === 'file') {
         const p = Buffer.from(
           u.pathname.slice(1),
