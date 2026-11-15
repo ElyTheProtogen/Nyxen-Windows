@@ -389,7 +389,7 @@ const ids = (list) => list.map((t) => t.id);
 const art = (t, size = 'md') => `<div class="art ${size}"><span class="ph">&#9834;</span>${t && t.cover ? `<img src="nyxen://cover/${t.id}" alt="">` : ''}</div>`;
 const collage = (ts, cls = '') => `<div class="collage ${cls}">${[0, 1, 2, 3].map((i) => art(ts[i], '')).join('')}</div>`;
 const trow = (t, ctx, i, extra) => `<div class="trow ${cur && cur.id === t.id ? 'cur' : ''}" data-act="play" data-ctx="${ctx}" data-i="${i}" data-id="${t.id}">${art(t, 'sm')}<div class="tmeta"><b>${esc(t.title)}</b><span>${esc(t.artist)} · ${esc(t.album)}</span><em class="pc">${playsText(t.plays)}</em></div>${t.fav ? `<span class="favmark">${svg('fav', 16)}</span>` : ''}<span class="dur">${fmt(t.duration)}</span>${extra || `<button class="icon" data-act="menu" data-id="${t.id}">${svg('more', 20)}</button>`}</div>`;
-const card = (t, ctx, i) => `<div class="card" data-act="play" data-ctx="${ctx}" data-i="${i}">${art(t, 'lg')}<b>${esc(t.title)}</b><span>${esc(t.artist)}</span><em>${playsText(t.plays)}</em></div>`;
+const card = (t, ctx, i) => `<div class="card" data-act="play" data-id="${t.id}" data-ctx="${ctx}" data-i="${i}">${art(t, 'lg')}<b>${esc(t.title)}</b><span>${esc(t.artist)}</span><em>${playsText(t.plays)}</em></div>`;
 const emptyState = (title, text, btn, act) => `<div class="empty"><div class="art"><span class="ph">&#9834;</span></div><h2 style="margin:0 0 6px">${esc(title)}</h2><div class="sub">${esc(text)}</div>${btn ? `<div style="margin-top:18px"><button class="btn" data-act="${act}">${esc(btn)}</button></div>` : ''}</div>`;
 const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; };
 const tile = (icon, label, act, extra = '') => `<button class="tile" data-act="${act}" ${extra}><i>${svg(icon, 24)}</i>${label}</button>`;
@@ -446,7 +446,7 @@ function pageVideos() {
   const videos = [...(S.videos || [])].sort((a, b) => (b.added || 0) - (a.added || 0));
   let h = '<div class="page"><div class="split"><div class="grow"><h1>Videos</h1><div class="sub">' + videos.length + ' videos in your library</div></div><button class="btn" data-act="import-video-files">Import videos</button><button class="btn ghost" data-act="import-video-folder">Import folder</button></div>';
   if (!videos.length) return h + emptyState('No videos yet', 'Import MP4, M4V, WebM or MOV files to watch them in NyxenPlayer.', 'Import videos', 'import-video-files') + '</div>';
-  h += videos.map(v => '<div class="video-row"><div class="video-mark">▶</div><div class="tmeta"><b>' + esc(v.title) + '</b><span>' + esc(v.path.split(/[\\/]/).pop()) + '</span><em>' + playsText(v.plays || 0) + '</em></div><button class="btn" data-act="play-video" data-id="' + esc(v.id) + '">Play</button><button class="icon" data-act="remove-video" data-id="' + esc(v.id) + '" title="Remove from library">' + svg('del', 19) + '</button></div>').join('');
+  h += videos.map(v => '<div class="video-row" data-video-id="' + esc(v.id) + '"><div class="video-mark">▶</div><div class="tmeta"><b>' + esc(v.title) + '</b><span>' + esc(v.path.split(/[\\/]/).pop()) + '</span><em>' + playsText(v.plays || 0) + '</em></div><button class="btn" data-act="play-video" data-id="' + esc(v.id) + '">Play</button><button class="icon" data-act="remove-video" data-id="' + esc(v.id) + '" title="Remove from library">' + svg('del', 19) + '</button></div>').join('');
   return h + '</div>';
 }
 function duplicateTracks() {
@@ -588,7 +588,7 @@ function updatePlayerUI() {
 function renderQueue() {
   const q = $('#queue'); if (q.classList.contains('off')) return;
   q.innerHTML = `<div class="split"><h2 class="grow" style="margin:0">Queue</h2><button class="icon" data-act="queue-toggle">${svg('close', 22)}</button></div><div class="sub" style="margin-bottom:10px">${Q.ids.length} songs &middot; ${MODE_NAME[S.settings.mode]}</div>` +
-    Q.ids.map((id, i) => { const t = track(id); return t ? `<div class="trow ${i === Q.i ? 'cur' : ''}" data-act="q-jump" data-i="${i}">${art(t, 'sm')}<div class="tmeta"><b>${esc(t.title)}</b><span>${esc(t.artist)}</span></div><button class="icon" data-act="q-rm" data-i="${i}">${svg('close', 18)}</button></div>` : ''; }).join('');
+    Q.ids.map((id, i) => { const t = track(id); return t ? `<div class="trow ${i === Q.i ? 'cur' : ''}" data-act="q-jump" data-id="${t.id}" data-i="${i}">${art(t, 'sm')}<div class="tmeta"><b>${esc(t.title)}</b><span>${esc(t.artist)}</span></div><button class="icon" data-act="q-rm" data-i="${i}">${svg('close', 18)}</button></div>` : ''; }).join('');
 }
 let idle = 0, vizAccent = '#b14bff', vizAccentT = 0; const vdata = new Uint8Array(256);
 function vizLoop() {
@@ -716,6 +716,41 @@ function playVideo(id) {
   player.load();
   player.play().catch(() => toast('This video could not be played. Check its format or file location.'));
 }
+function getVideoAudioTracks() {
+  const list = $('#nyxen-video')?.audioTracks;
+  if (!list || typeof list.length !== 'number') return null;
+  return Array.from({length:list.length}, (_, i) => list[i]);
+}
+function videoAudioTrackLabel(track, index) {
+  return track.label || track.language || track.id || 'Audio track ' + (index + 1);
+}
+function updateVideoAudioButton() {
+  const button = $('#video-audio-track');
+  if (!button) return;
+  const tracks = getVideoAudioTracks();
+  button.disabled = false;
+  button.title = !tracks ? 'Audio track selection is not supported by this video runtime' : tracks.length < 2 ? 'No alternate audio tracks detected' : 'Choose audio track';
+  button.textContent = tracks && tracks.length > 1 ? 'Audio · ' + (tracks.findIndex(t => t.enabled) + 1) : 'Audio';
+}
+function selectVideoAudioTrack(index) {
+  const tracks = getVideoAudioTracks();
+  if (!tracks || !tracks[index]) { toast('This video runtime does not expose selectable audio tracks for this file.'); return; }
+  tracks.forEach((track, i) => { track.enabled = i === index; });
+  updateVideoAudioButton();
+  toast('Audio track: ' + videoAudioTrackLabel(tracks[index], index));
+}
+function showVideoAudioMenu(x, y) {
+  const tracks = getVideoAudioTracks();
+  if (!tracks) {
+    showContextMenu([{label:'Audio track selection unavailable', cmd:'noop', disabled:true}], x, y);
+    return;
+  }
+  if (!tracks.length) {
+    showContextMenu([{label:'No audio tracks detected', cmd:'noop', disabled:true}], x, y);
+    return;
+  }
+  showContextMenu(tracks.map((track, i) => ({label:(track.enabled ? '✓ ' : '') + videoAudioTrackLabel(track, i), cmd:'video-audio', value:String(i)})), x, y);
+}
 function closeVideoPlayer() {
   const player = $('#nyxen-video');
   player.pause();
@@ -727,6 +762,13 @@ function closeVideoPlayer() {
 function initVideoPlayer() {
   const player = $('#nyxen-video');
   player.addEventListener('play', () => { if (!audio.paused) audio.pause(); });
+  player.addEventListener('loadedmetadata', updateVideoAudioButton);
+  if (player.audioTracks) {
+    player.audioTracks.addEventListener?.('addtrack', updateVideoAudioButton);
+    player.audioTracks.addEventListener?.('removetrack', updateVideoAudioButton);
+    player.audioTracks.addEventListener?.('change', updateVideoAudioButton);
+  }
+  $('#video-audio-track').addEventListener('click', (e) => showVideoAudioMenu(e.clientX || innerWidth - 220, e.clientY || 80));
   $('#video-back').addEventListener('click', closeVideoPlayer);
   $('#video-fullscreen').addEventListener('click', async () => {
     try {
@@ -980,11 +1022,36 @@ const ACT = {
   }
 };
 const MENU = {
+  play: (id) => playIds([id], 0),
   next: (id) => enqueue(id, true), queue: (id) => enqueue(id, false),
   fav: (id) => { const t = track(id); if (t) { t.fav = !t.fav; save(); updatePlayerUI(); render(); } },
   pl: (id) => pickPlaylist([id]), edit: (id) => editTrack(track(id)), lyrics: (id) => openLyrics(track(id)),
   rm: async (id) => { const t = track(id); if (t && await confirmBox('Remove from library?', `"${t.title}" will be removed from NyxenPlayer. The file stays on your computer.`, 'Remove')) removeTrack(id); }
 };
+function showContextMenu(items, x, y) {
+  const menu = $('#menu');
+  menu.dataset.contextMenu = '1';
+  menu.innerHTML = items.map(item => `<button type="button" data-context-cmd="${esc(item.cmd)}" ${item.value !== undefined ? `data-context-value="${esc(item.value)}"` : ''} ${item.id ? `data-context-id="${esc(item.id)}"` : ''} ${item.disabled ? 'disabled' : ''}>${esc(item.label)}</button>`).join('');
+  menu.classList.remove('hidden');
+  const width = 248, height = Math.min(items.length * 42 + 12, innerHeight - 24);
+  menu.style.left = Math.max(8, Math.min(x, innerWidth - width - 8)) + 'px';
+  menu.style.top = Math.max(8, Math.min(y, innerHeight - height - 8)) + 'px';
+}
+function runContextCommand(button) {
+  const cmd = button.dataset.contextCmd, id = button.dataset.contextId, value = button.dataset.contextValue;
+  if (cmd.startsWith('track-')) { const action = cmd.slice(6); if (MENU[action]) MENU[action](id); }
+  else if (cmd === 'video-play') ACT['play-video']({id});
+  else if (cmd === 'video-remove') ACT['remove-video']({id});
+  else if (cmd === 'playlist-open') go('playlist', id);
+  else if (cmd === 'playlist-play') ACT['play-pl']({pl:id});
+  else if (cmd === 'playlist-shuffle') ACT['shuffle-pl']({pl:id});
+  else if (cmd === 'playlist-rename') ACT['rename-pl']({pl:id});
+  else if (cmd === 'playlist-delete') ACT['del-pl']({pl:id});
+  else if (cmd === 'group-open') { const el = button.dataset.contextGroup; V.group={cat:S.settings.cat,name:el}; render(); }
+  else if (cmd === 'group-play') { const field={albums:'album',artists:'artist',genres:'genre'}[S.settings.cat], list=sortTracks(S.tracks.filter(t=>t[field]===button.dataset.contextGroup)); if(list.length)playIds(ids(list),0); }
+  else if (cmd === 'group-shuffle') { const field={albums:'album',artists:'artist',genres:'genre'}[S.settings.cat], list=ids(sortTracks(S.tracks.filter(t=>t[field]===button.dataset.contextGroup))); if(list.length){setMode('shuffle');playIds(list,Math.floor(Math.random()*list.length));} }
+  else if (cmd === 'video-audio') selectVideoAudioTrack(Number(value));
+}
 function uiClick() {
   if (!S.settings.buttonSounds || !ac) return;
   try {
@@ -997,11 +1064,50 @@ function uiClick() {
     osc.start(); osc.stop(ac.currentTime + .04);
   } catch {}
 }
+document.addEventListener('contextmenu', (e) => {
+  const videoPlayer = e.target.closest('#video-player:not(.off) .video-screen, #video-player:not(.off) .video-player-header');
+  if (videoPlayer) { e.preventDefault(); showVideoAudioMenu(e.clientX, e.clientY); return; }
+  const trackEl = e.target.closest('.trow[data-id], .card[data-id]');
+  if (trackEl) {
+    e.preventDefault();
+    const id = trackEl.dataset.id, t = track(id); if (!t) return;
+    showContextMenu([
+      {label:'Play now',cmd:'track-play',id},
+      {label:'Play next',cmd:'track-next',id},
+      {label:'Add to queue',cmd:'track-queue',id},
+      {label:t.fav?'Remove from favorites':'Add to favorites',cmd:'track-fav',id},
+      {label:'Add to playlist…',cmd:'track-pl',id},
+      {label:'Edit song info',cmd:'track-edit',id},
+      {label:'Edit lyrics',cmd:'track-lyrics',id},
+      {label:'Remove from Nyxen',cmd:'track-rm',id}
+    ],e.clientX,e.clientY); return;
+  }
+  const videoEl = e.target.closest('.video-row[data-video-id]');
+  if (videoEl) {
+    e.preventDefault(); const id=videoEl.dataset.videoId;
+    showContextMenu([{label:'Play video',cmd:'video-play',id},{label:'Remove from library',cmd:'video-remove',id}],e.clientX,e.clientY); return;
+  }
+  const playlistEl = e.target.closest('.trow[data-pl]');
+  if (playlistEl) {
+    e.preventDefault(); const id=playlistEl.dataset.pl, custom=S.playlists.some(p=>p.id===id);
+    const items=[{label:'Open playlist',cmd:'playlist-open',id},{label:'Play playlist',cmd:'playlist-play',id},{label:'Shuffle playlist',cmd:'playlist-shuffle',id}];
+    if(custom)items.push({label:'Rename playlist',cmd:'playlist-rename',id},{label:'Delete playlist',cmd:'playlist-delete',id});
+    showContextMenu(items,e.clientX,e.clientY); return;
+  }
+  const groupEl = e.target.closest('.card[data-act="group"]');
+  if (groupEl) {
+    e.preventDefault(); const name=groupEl.dataset.name;
+    showContextMenu([{label:'Open',cmd:'group-open',value:name},{label:'Play all',cmd:'group-play',value:name},{label:'Shuffle',cmd:'group-shuffle',value:name}],e.clientX,e.clientY);
+    const buttons=$$('#menu [data-context-cmd]'); buttons.forEach(b=>b.dataset.contextGroup=name); return;
+  }
+});
 document.addEventListener('click', (e) => {
   if (e.target.closest('button')) uiClick();
+  const contextButton = e.target.closest('#menu [data-context-cmd]');
+  if (contextButton) { if (!contextButton.disabled) runContextCommand(contextButton); $('#menu').classList.add('hidden'); return; }
   const mb = e.target.closest('#menu [data-m]');
   if (mb) { const id = $('#menu').dataset.id; $('#menu').classList.add('hidden'); MENU[mb.dataset.m](id); return; }
-  if (!e.target.closest('#menu')) $('#menu').classList.add('hidden');
+  if (!e.target.closest('#menu')) { $('#menu').classList.add('hidden'); delete $('#menu').dataset.contextMenu; }
   const el = e.target.closest('[data-act]');
   if (el && ACT[el.dataset.act]) ACT[el.dataset.act](el.dataset, e);
 });
