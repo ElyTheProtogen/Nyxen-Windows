@@ -13,6 +13,9 @@ const {
   powerSaveBlocker
 } = require('electron');
 
+// Expose Chromium's AudioTrackList API so the video player can switch embedded audio tracks.
+app.commandLine.appendSwitch('enable-blink-features', 'AudioVideoTracks');
+
 const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
