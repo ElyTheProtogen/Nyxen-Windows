@@ -648,7 +648,6 @@ async function firebaseEmailAuth(input) {
   const email = String(input && input.email || '').trim();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Enter a valid email address.');
   const createAccount = !!(input && input.createAccount);
-  if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) throw new Error('Enter a valid email address.');
   if (password.length < 6) throw new Error('Password must be at least 6 characters.');
   if (createAccount) {
     const created = await firebaseAuthRequest('accounts:signUp', { email, password, returnSecureToken: true });
