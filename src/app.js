@@ -424,10 +424,10 @@ function updateProgress() {
   const d = mediaDuration();
   const t = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
   const safeTime = d ? clamp(t, 0, d) : 0;
-  $('.tcur').forEach((el) => { el.textContent = fmt(safeTime); });
-  $('.tdur').forEach((el) => { el.textContent = fmt(d); });
+  $$('.tcur').forEach((el) => { el.textContent = fmt(safeTime); });
+  $$('.tdur').forEach((el) => { el.textContent = fmt(d); });
   if (!seeking) {
-    $('.seekin').forEach((el) => {
+    $$('.seekin').forEach((el) => {
       const p = d ? clamp(safeTime / d, 0, 1) * 100 : 0;
       el.value = String(Math.round(p * 10));
       el.style.setProperty('--p', p + '%');
@@ -885,7 +885,7 @@ document.addEventListener('input', (e) => {
   else if (t.classList && t.classList.contains('seekin')) {
     seeking = true;
     const d = mediaDuration();
-    if (d > 0) $('.tcur').forEach((el) => { el.textContent = fmt((clamp(Number(t.value) / 1000, 0, 1)) * d); });
+    if (d > 0) $$('.tcur').forEach((el) => { el.textContent = fmt((clamp(Number(t.value) / 1000, 0, 1)) * d); });
   }
 });
 document.addEventListener('change', (e) => {
