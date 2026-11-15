@@ -399,7 +399,28 @@ const SMART = [
   { id: 's:recent', n: 'Recently played', f: (ts) => ts.filter((t) => t.last > 0).sort((a, b) => b.last - a.last).slice(0, 50) },
   { id: 's:week', n: 'Added this week', f: (ts) => ts.filter((t) => t.added > Date.now() - 6048e5).sort((a, b) => b.added - a.added) },
   { id: 's:long', n: 'Long songs', f: (ts) => ts.filter((t) => t.duration >= 300).sort((a, b) => b.duration - a.duration).slice(0, 100) },
-  { id: 's:never', n: 'Never played', f: (ts) => ts.filter((t) => !t.plays).slice(0, 100) }
+  { id: 's:never', n: 'Never played', f: (ts) => ts.filter((t) => !t.plays).slice(0, 100) },
+  { id: 's:short', n: 'Short listens', f: (ts) => ts.filter((t) => t.duration > 0 && t.duration < 180).sort((a, b) => a.duration - b.duration) },
+  { id: 's:epic', n: 'Long-form tracks', f: (ts) => ts.filter((t) => t.duration >= 600).sort((a, b) => b.duration - a.duration) },
+  { id: 's:quick', n: 'Under four minutes', f: (ts) => ts.filter((t) => t.duration > 0 && t.duration < 240).sort((a, b) => a.duration - b.duration) },
+  { id: 's:deep', n: 'Favorite deep cuts', f: (ts) => ts.filter((t) => t.fav && t.plays > 0 && t.plays <= 3).sort((a, b) => b.last - a.last) },
+  { id: 's:heavy', n: 'Heavy rotation', f: (ts) => ts.filter((t) => t.plays >= 10).sort((a, b) => b.plays - a.plays) },
+  { id: 's:unheard', n: 'Unheard favorites', f: (ts) => ts.filter((t) => t.fav && !t.plays).sort((a, b) => b.added - a.added) },
+  { id: 's:forgotten', n: 'Forgotten favorites', f: (ts) => ts.filter((t) => t.fav && t.last > 0 && t.last < Date.now() - 30 * 864e5).sort((a, b) => a.last - b.last) },
+  { id: 's:new30', n: 'Added in 30 days', f: (ts) => ts.filter((t) => t.added > Date.now() - 30 * 864e5).sort((a, b) => b.added - a.added) },
+  { id: 's:new90', n: 'Added in 90 days', f: (ts) => ts.filter((t) => t.added > Date.now() - 90 * 864e5).sort((a, b) => b.added - a.added) },
+  { id: 's:played7', n: 'Played this week', f: (ts) => ts.filter((t) => t.last > Date.now() - 7 * 864e5).sort((a, b) => b.last - a.last) },
+  { id: 's:played30', n: 'Played this month', f: (ts) => ts.filter((t) => t.last > Date.now() - 30 * 864e5).sort((a, b) => b.last - a.last) },
+  { id: 's:stale30', n: 'Not heard in 30 days', f: (ts) => ts.filter((t) => t.plays > 0 && t.last > 0 && t.last < Date.now() - 30 * 864e5).sort((a, b) => a.last - b.last) },
+  { id: 's:stale90', n: 'Not heard in 90 days', f: (ts) => ts.filter((t) => t.plays > 0 && t.last > 0 && t.last < Date.now() - 90 * 864e5).sort((a, b) => a.last - b.last) },
+  { id: 's:favshort', n: 'Short favorites', f: (ts) => ts.filter((t) => t.fav && t.duration > 0 && t.duration < 240).sort((a, b) => a.duration - b.duration) },
+  { id: 's:favlong', n: 'Long favorites', f: (ts) => ts.filter((t) => t.fav && t.duration >= 360).sort((a, b) => b.duration - a.duration) },
+  { id: 's:unfav', n: 'Not in favorites', f: (ts) => ts.filter((t) => !t.fav).sort((a, b) => b.added - a.added) },
+  { id: 's:singles', n: 'Artist discoveries', f: (ts) => { const counts = new Map(); ts.forEach((t) => counts.set(t.artist, (counts.get(t.artist) || 0) + 1)); return ts.filter((t) => counts.get(t.artist) === 1).sort((a, b) => a.artist.localeCompare(b.artist)); } },
+  { id: 's:lowplay', n: 'Underrated tracks', f: (ts) => ts.filter((t) => t.plays > 0 && t.plays <= 2).sort((a, b) => b.last - a.last) },
+  { id: 's:mid', n: 'Three to six minutes', f: (ts) => ts.filter((t) => t.duration >= 180 && t.duration < 360).sort((a, b) => a.duration - b.duration) },
+  { id: 's:high', n: 'Six minutes and up', f: (ts) => ts.filter((t) => t.duration >= 360).sort((a, b) => b.duration - a.duration) },
+  { id: 's:recentfav', n: 'Recently loved', f: (ts) => ts.filter((t) => t.fav).sort((a, b) => b.last - a.last || b.added - a.added).slice(0, 100) }
 ];
 const plTracks = (id) => (id.startsWith('s:') ? SMART.find((s) => s.id === id).f(S.tracks) : ((S.playlists.find((p) => p.id === id) || { ids: [] }).ids).map(track).filter(Boolean));
 const SORTS = { title: 'Title', artist: 'Artist', album: 'Album', duration: 'Duration', added: 'Date added', plays: 'Play count' };
@@ -517,7 +538,7 @@ function pageSettings() {
     ['about','About','Version, credits and app information','ⓘ']
   ];
   if (key === 'overview') return '<div class="page settings-home"><div class="settings-heading"><h1>Settings</h1><p class="sub">Choose a section to customize NyxenPlayer.</p></div><div class="settings-card-grid">'+cards.map(c=>'<button class="settings-card" data-act="settings-page" data-key="'+c[0]+'"><span class="settings-card-icon">'+c[3]+'</span><span class="settings-card-copy"><b>'+c[1]+'</b><small>'+c[2]+'</small></span><span class="settings-card-arrow">›</span></button>').join('')+'</div></div>';
-  if (key === 'library') return '<div class="page">'+header('Library & import','Manage the folders and media Nyxen scans.')+'<div class="glass"><h3>Music library</h3><p>'+S.folders.length+' watched folders · '+S.tracks.length+' songs</p><div class="toolbar"><button class="btn" data-act="import-folder">Import a folder</button><button class="btn ghost" data-act="import-files">Import files</button><button class="btn ghost" data-act="rescan">Rescan folders</button></div></div><div class="glass"><h3>Video library</h3><p>'+(S.videoFolders||[]).length+' watched folders · '+(S.videos||[]).length+' videos</p><div class="toolbar"><button class="btn ghost" data-act="import-video-folder">Import video folder</button><button class="btn ghost" data-act="import-video-files">Import videos</button></div></div><div class="glass"><h3>Offline soundscapes</h3><p>Import the optional Nyxen offline soundscape collection when its audio assets are included in this build.</p><button class="btn ghost" data-act="offline-pack">Add offline soundscapes</button></div><div class="glass"><h3>Automatic scanning</h3>'+toggle('autoImport','Auto-import watched folders','Rescan watched music and video folders when Nyxen opens.')+'</div></div>';
+  if (key === 'library') return '<div class="page">'+header('Library & import','Manage the folders and media Nyxen scans.')+'<div class="glass"><h3>Music library</h3><p>'+S.folders.length+' watched folders · '+S.tracks.length+' songs</p><div class="toolbar"><button class="btn" data-act="import-folder">Import a folder</button><button class="btn ghost" data-act="import-files">Import files</button><button class="btn ghost" data-act="rescan">Rescan folders</button></div></div><div class="glass"><h3>Video library</h3><p>'+(S.videoFolders||[]).length+' watched folders · '+(S.videos||[]).length+' videos</p><div class="toolbar"><button class="btn ghost" data-act="import-video-folder">Import video folder</button><button class="btn ghost" data-act="import-video-files">Import videos</button></div></div><div class="glass"><h3>Offline soundscapes</h3><p>Import the optional Nyxen offline soundscape collection when its audio assets are included in this build.</p><button class="btn ghost" data-act="offline-pack">Add offline soundscapes</button></div><div class="glass"><h3>Backup & restore</h3><p>Export your library metadata, playlists, lyrics, listening history and settings to a JSON backup. Your original media files are never copied.</p><div class="toolbar"><button class="btn" data-act="export-backup">Export backup</button><button class="btn ghost" data-act="import-backup">Restore backup</button></div></div><div class="glass"><h3>Automatic scanning</h3>'+toggle('autoImport','Auto-import watched folders','Rescan watched music and video folders when Nyxen opens.')+'</div></div>';
   if (key === 'appearance') {
     const th = THEMES.map((t,i)=>'<button class="sw '+(S.settings.theme===i?'on':'')+'" data-act="theme" data-i="'+i+'" aria-label="Use '+esc(t.n)+' theme"><i style="background:linear-gradient(180deg,'+t.g.join(',')+')"></i>'+esc(t.n)+'</button>').join('');
     const wallpapers = Array.from({length:8},(_,i)=>'<button class="wallpaper '+(S.settings.wallpaper===i+1?'on':'')+'" data-act="wallpaper" data-i="'+(i+1)+'"><img loading="lazy" src="nyxen://wallpaper/nyxen_wallpaper_'+String(i+1).padStart(2,'0')+'.png" alt=""><span>Wallpaper '+(i+1)+'</span></button>').join('');
@@ -923,6 +944,32 @@ const ACT = {
     save(); render();
   },
   rescan: () => { if (!S.folders.length) toast('No folders yet. Import a folder first.'); else importTargets(S.folders, [], false); },
+  'export-backup': () => {
+    try {
+      const payload = JSON.stringify({ format: 'nyxen-backup', version: 1, exportedAt: new Date().toISOString(), state: S }, null, 2);
+      const blob = new Blob([payload], { type: 'application/json' });
+      const url = URL.createObjectURL(blob), link = document.createElement('a');
+      link.href = url; link.download = 'nyxen-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+      document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast('Backup exported');
+    } catch { toast('Could not export backup'); }
+  },
+  'import-backup': () => {
+    const input = document.createElement('input'); input.type = 'file'; input.accept = '.json,application/json';
+    input.onchange = async () => {
+      const file = input.files && input.files[0]; if (!file) return;
+      try {
+        if (file.size > 25 * 1024 * 1024) { toast('Backup is too large (25 MB maximum)'); return; }
+        const parsed = JSON.parse(await file.text());
+        const raw = parsed && parsed.format === 'nyxen-backup' ? parsed.state : parsed;
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw) || (!Array.isArray(raw.tracks) && !Array.isArray(raw.playlists))) throw new Error('Invalid backup');
+        if (!await confirmBox('Restore backup?', 'This replaces the current Nyxen library, playlists, lyrics and settings. Your original media files will not be changed.', 'Restore')) return;
+        S = normalizeState(raw); reindex(); save(); applyTheme(); applyFx(); setReverb(); applyCustomFont(); applyWallpaper(); updatePlayerUI(); render();
+        toast('Backup restored. Re-import folders if any file paths have changed.');
+      } catch { toast('That backup file is invalid or could not be read'); }
+    };
+    input.click();
+  },
   sf: (d) => { V.sf = d.f; render(); },
   'search-recent': (d) => { V.q=d.q||'';render(); },
 
