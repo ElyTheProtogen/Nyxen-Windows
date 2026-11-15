@@ -31,4 +31,4 @@ Library metadata, playlists, settings, lyrics and listening history are stored l
 
 ## Platform-specific notes
 - Android-only haptics and Android notification/media-session integration do not apply to Windows. Headphone-disconnect pause behavior is not included in this desktop build.
-- Desktop sign-in uses Nyxen email/password authentication or local guest mode.
+- No account or sign-in is required. The player runs locally on this computer.
