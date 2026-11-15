@@ -36,8 +36,7 @@ contextBridge.exposeInMainWorld('nyxen', {
   setKeepAwake: (enabled) =>
     ipcRenderer.invoke('power:keep-awake', !!enabled),
 
-  // Google account authentication
-  googleSignIn: () => ipcRenderer.invoke('google:sign-in'),
+  // Email and password authentication
   emailAuth: (credentials) => ipcRenderer.invoke('email:auth', credentials),
 
   // External links
