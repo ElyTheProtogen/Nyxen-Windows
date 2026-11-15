@@ -18,13 +18,13 @@ The GitHub Actions workflow in `.github/workflows/build-windows.yml` builds both
 - 10-band equalizer, tone controls, reverb, custom EQ presets and playback speed
 - Listening statistics for plays, listening time, top songs, artists and genres
 - 26 built-in gradient themes, custom accent themes, imported .ttf/.otf fonts and 8 offline wallpapers
-- Original offline soundscapes with generated cover artwork
+- Optional offline soundscape import, with a clear availability check for missing media assets
 - Timed `.lrc` and plain `.txt` lyrics, plus editable song metadata
 - Sleep timer with optional fade-out, auto-play similar tracks and keep-display-awake control
 - Keyboard shortcuts and media keys
 
 ## Offline pack
-The app bundles eight Nyxen wallpapers, three original square cover images and three original 48-second instrumental soundscapes. The soundscapes are copied into the app's user-data folder only when you choose **Add offline soundscapes** in Settings.
+The app bundles eight Nyxen wallpapers. The optional soundscape WAV files and their cover images are not currently present in this repository, so **Add offline soundscapes** reports that the pack is unavailable until those assets are added.
 
 ## Data and privacy
 Library metadata, playlists, settings, lyrics and listening history are stored locally at `%APPDATA%\\nyxenplayer\\nyxen-state.json`; extracted covers and imported offline audio are stored in the NyxenPlayer user-data folder. Your original music files are never copied or modified.
