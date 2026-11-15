@@ -85,7 +85,7 @@ let byId = new Map();
 const reindex = () => { byId = new Map(S.tracks.map((t) => [t.id, t])); };
 const track = (id) => byId.get(id);
 let saveTimer = 0;
-const save = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => window.nyxen.saveState(S), 500); };
+const save = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => { Promise.resolve(window.nyxen.saveState(S)).catch(() => toast('Could not save NyxenPlayer data')); }, 500); };
 let toastT = 0;
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 3200); }
 const signedIn = () => S.profile.name && isGmail(S.profile.email);
@@ -132,7 +132,7 @@ function applyFx() {
 
 /* ================= queue & playback ================= */
 let Q = { ids: [], i: -1, orig: null };
-let cur = null, counted = false, touched = false, seeking = false, resumePos = 0, lastPosSave = 0;
+let cur = null, counted = false, touched = false, seeking = false, resumePos = 0, lastPosSave = 0, errorSkipTimer = 0;
 
 function shuffleQueue() {
   const c = Q.ids[Q.i]; Q.orig = Q.ids.slice();
@@ -149,6 +149,7 @@ function playIds(list, i = 0) {
 }
 function loadCurrent(autoplay) {
   const t = track(Q.ids[Q.i]); if (!t) return;
+  clearTimeout(errorSkipTimer); errorSkipTimer = 0;
   cur = t; counted = touched = false;
   audio.src = fileUrl(t.path);
   S.last.id = t.id; S.last.pos = 0; S.savedQueue = Q.ids.slice(); S.savedQueueIndex = Q.i; save();
@@ -164,7 +165,25 @@ function next(manual = true) {
   if (!Q.ids.length) return;
   let i = Q.i + 1;
   if (i >= Q.ids.length) {
-    if (S.settings.mode === 'order') { audio.pause(); audio.currentTime = 0; return; }
+    if (S.settings.mode === 'order') {
+      if (S.settings.autoplaySimilar && cur) {
+        const current = cur;
+        const candidates = S.tracks
+          .filter((t) => t.id !== current.id && !Q.ids.includes(t.id) &&
+            ((current.artist && t.artist === current.artist) || (current.genre && t.genre === current.genre)))
+          .sort((a, b) => {
+            const score = (t) => (t.artist === current.artist ? 2 : 0) + (t.genre === current.genre ? 1 : 0);
+            return score(b) - score(a) || (a.plays || 0) - (b.plays || 0);
+          });
+        if (candidates.length) {
+          Q.ids.push(candidates[0].id);
+          Q.i++;
+          loadCurrent(true);
+          return;
+        }
+      }
+      audio.pause(); audio.currentTime = 0; return;
+    }
     if (S.settings.mode === 'shuffle') { const all = (Q.orig || Q.ids).slice(); Q = { ids: all, i: Math.floor(Math.random() * all.length), orig: null }; shuffleQueue(); i = 0; }
     else i = 0;
   }
@@ -207,10 +226,18 @@ audio.addEventListener('loadedmetadata', () => {
 audio.addEventListener('durationchange', updateProgress);
 audio.addEventListener('seeking', updateProgress);
 audio.addEventListener('seeked', updateProgress);
-audio.addEventListener('error', () => { if (cur) { toast('Cannot play "' + cur.title + '". Skipping.'); if (Q.ids.length > 1) setTimeout(() => next(true), 600); } });
+audio.addEventListener('error', () => {
+  if (!cur) return;
+  const failedId = cur.id;
+  toast('Cannot play "' + cur.title + '". Skipping.');
+  clearTimeout(errorSkipTimer);
+  if (Q.ids.length > 1) errorSkipTimer = setTimeout(() => {
+    if (cur && cur.id === failedId && audio.error) next(true);
+  }, 600);
+});
 audio.addEventListener('timeupdate', () => {
   if (!cur) return;
-  const t = audio.currentTime, d = audio.duration || cur.duration || 0;
+  const t = audio.currentTime, d = mediaDuration();
   if (!touched && t >= 3) { touched = true; cur.last = Date.now(); save(); }
   if (!counted && t >= Math.min(d / 2 || 30, 30)) {
     counted = true; cur.plays++; cur.last = Date.now(); save();
@@ -592,11 +619,35 @@ function enqueue(id, afterCurrent) {
   toast(afterCurrent ? 'Will play next' : 'Added to queue'); renderQueue();
 }
 function removeTrack(id) {
-  S.tracks = S.tracks.filter((t) => t.id !== id); S.playlists.forEach((p) => { p.ids = p.ids.filter((x) => x !== id); });
-  const wasCur = cur && cur.id === id; Q.ids = Q.ids.filter((x) => x !== id); S.savedQueue=Q.ids.slice(); if (Q.orig) Q.orig = Q.orig.filter((x) => x !== id);
-  reindex(); save();
-  if (wasCur) { audio.pause(); cur = null; audio.removeAttribute('src'); Q.i = Math.min(Q.i, Q.ids.length - 1); updatePlayerUI(); }
-  render(); renderQueue();
+  S.tracks = S.tracks.filter((t) => t.id !== id);
+  S.playlists.forEach((p) => { p.ids = p.ids.filter((x) => x !== id); });
+  const wasCur = !!(cur && cur.id === id);
+  const queueIndex = Q.ids.indexOf(id);
+  if (queueIndex >= 0) {
+    Q.ids.splice(queueIndex, 1);
+    if (Q.orig) {
+      const originalIndex = Q.orig.indexOf(id);
+      if (originalIndex >= 0) Q.orig.splice(originalIndex, 1);
+    }
+    if (queueIndex < Q.i) Q.i--;
+  }
+  if (wasCur) {
+    cur = null;
+    counted = touched = false;
+    resumePos = 0;
+    S.last = { id: null, pos: 0 };
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+    Q.i = Q.ids.length ? clamp(Q.i, 0, Q.ids.length - 1) : -1;
+  }
+  S.savedQueue = Q.ids.slice();
+  S.savedQueueIndex = Q.i;
+  reindex();
+  save();
+  updatePlayerUI();
+  render();
+  renderQueue();
 }
 function movePl(pid, i, d) { const p = S.playlists.find((x) => x.id === pid); const j = i + d; if (!p || j < 0 || j >= p.ids.length) return; [p.ids[i], p.ids[j]] = [p.ids[j], p.ids[i]]; save(); render(); }
 function setVolume(v) { S.settings.volume = clamp(v, 0, 1); muted = false; applyFx(); save(); renderBar(); updateProgress(); }
@@ -639,7 +690,7 @@ function renderLyrics(text) {
   for(const raw of text.split(/\r?\n/)){
     const matches=[...raw.matchAll(/\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]/g)];
     const lyric=raw.replace(/\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]/g,'').trim();
-    if(matches.length){for(const m of matches){const frac=Number(('0.'+(m[3]||'0')).slice(0,5));const ms=(Number(m[1])*60+Number(m[2])+frac)*1000;lines.push({ms,text:lyric});}}
+    if(matches.length){for(const m of matches){const fractionMs=m[3]?Number(m[3].padEnd(3,'0').slice(0,3)):0;const ms=(Number(m[1])*60+Number(m[2]))*1000+fractionMs;lines.push({ms,text:lyric});}}
     else if(raw.trim()) lines.push({ms:null,text:raw});
   }
   if(!lines.some(x=>x.ms!==null)) return lines.map(x=>`<span class="lyrics-line">${esc(x.text)}</span>`).join('');
@@ -709,7 +760,24 @@ const ACT = {
   'np-close': () => $('#np').classList.add('off'),
   'queue-toggle': () => { const q = $('#queue'); q.classList.toggle('off'); renderQueue(); },
   'q-jump': (d) => { Q.i = +d.i; loadCurrent(true); },
-  'q-rm': (d, e) => { e.stopPropagation(); const i = +d.i; Q.ids.splice(i, 1); S.savedQueue=Q.ids.slice(); if (i < Q.i) Q.i--; else if (i === Q.i) { if (Q.ids.length) { Q.i = Math.min(Q.i, Q.ids.length - 1); loadCurrent(true); } else { audio.pause(); } } S.savedQueueIndex=Q.i;save();renderQueue(); },
+  'q-rm': (d, e) => {
+    e.stopPropagation();
+    const i = +d.i;
+    if (!Number.isInteger(i) || i < 0 || i >= Q.ids.length) return;
+    const [removedId] = Q.ids.splice(i, 1);
+    if (Q.orig) { const oi = Q.orig.indexOf(removedId); if (oi >= 0) Q.orig.splice(oi, 1); }
+    if (i < Q.i) Q.i--;
+    else if (i === Q.i) {
+      if (Q.ids.length) { Q.i = Math.min(Q.i, Q.ids.length - 1); loadCurrent(true); }
+      else {
+        Q.i = -1; cur = null; counted = touched = false; resumePos = 0;
+        S.last = { id: null, pos: 0 };
+        audio.pause(); audio.removeAttribute('src'); audio.load(); updatePlayerUI();
+      }
+    }
+    S.savedQueue = Q.ids.slice(); S.savedQueueIndex = Q.i;
+    save(); renderQueue();
+  },
   'eq-toggle': () => { S.settings.eqOn = !S.settings.eqOn; applyFx(); save(); render(); },
   'eq-preset': (d) => { S.settings.preset = d.n; S.settings.gains = EQ_PRESETS[d.n].slice(); applyFx(); save(); render(); },
   rv: (d) => { S.settings.rvPreset = +d.i; setReverb(); applyFx(); save(); render(); },
@@ -756,7 +824,11 @@ const ACT = {
   'sign-out': () => { S.profile = { name: '', email: '' }; save(); showWelcome(); },
   wipe: async () => {
     if (!await confirmBox('Delete all data?', 'This removes your library, playlists, favorites, play counts, settings and profile from NyxenPlayer. Your music files are not touched.', 'Delete')) return;
-    await window.nyxen.wipe(); audio.pause(); audio.removeAttribute('src'); cur = null; Q = { ids: [], i: -1, orig: null };
+    clearTimeout(saveTimer); saveTimer = 0;
+    cur = null; Q = { ids: [], i: -1, orig: null }; counted = touched = false; resumePos = 0;
+    audio.pause(); audio.removeAttribute('src'); audio.load();
+    await window.nyxen.wipe();
+    clearTimeout(saveTimer); saveTimer = 0;
     S = DEFAULT(); reindex(); applyTheme(); applyFx(); setReverb(); updatePlayerUI(); render(); showWelcome();
   }
 };
