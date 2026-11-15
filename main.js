@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, protocol, net, globalShortcut, Menu, nativeImage, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, protocol, net, globalShortcut, Menu, nativeImage, shell, powerSaveBlocker } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
@@ -16,6 +16,7 @@ let win = null;
 const userData = () => app.getPath('userData');
 const stateFile = () => path.join(userData(), 'nyxen-state.json');
 const coverDir = () => path.join(userData(), 'covers');
+const fontDir = () => path.join(userData(), 'fonts');
 const idFor = (p) => crypto.createHash('sha1').update(p.toLowerCase()).digest('hex').slice(0, 12);
 
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -119,9 +120,51 @@ ipcMain.handle('dialog:files', async () => {
   return r.canceled ? [] : r.filePaths;
 });
 ipcMain.handle('scan', (_e, targets, known) => scan(targets, new Set(known)));
+ipcMain.handle('offline:import', async () => {
+  const audioDir = path.join(__dirname, 'resources', 'offline', 'audio');
+  const coverSource = path.join(__dirname, 'resources', 'offline', 'covers');
+  const targetDir = path.join(userData(), 'offline');
+  await fsp.mkdir(targetDir, { recursive: true });
+  await fsp.mkdir(coverDir(), { recursive: true });
+  const names = ['nyxen_sample_01.wav', 'nyxen_sample_02.wav', 'nyxen_sample_03.wav'];
+  const added = [];
+  for (let i = 0; i < names.length; i++) {
+    const source = path.join(audioDir, names[i]);
+    const target = path.join(targetDir, names[i]);
+    await fsp.writeFile(target, await fsp.readFile(source));
+    const id = idFor(target);
+    const cover = path.join(coverSource, `nyxen_cover_0${i + 1}.png`);
+    const img = nativeImage.createFromBuffer(await fsp.readFile(cover));
+    if (!img.isEmpty()) await fsp.writeFile(path.join(coverDir(), id + '.jpg'), img.toJPEG(88));
+    added.push({ path: target, id, cover: true, index: i });
+  }
+  return added;
+});
+ipcMain.handle('font:pick', async () => {
+  const result = await dialog.showOpenDialog(win, {
+    properties: ['openFile'],
+    filters: [{ name: 'Font files', extensions: ['ttf', 'otf'] }]
+  });
+  if (result.canceled || !result.filePaths[0]) return null;
+  const source = result.filePaths[0];
+  const ext = path.extname(source).toLowerCase();
+  const safeName = path.basename(source, ext).replace(/[^a-z0-9_-]/gi, '_').slice(0, 48) || 'custom-font';
+  const fileName = `${safeName}-${crypto.randomBytes(4).toString('hex')}${ext}`;
+  await fsp.mkdir(fontDir(), { recursive: true });
+  await fsp.copyFile(source, path.join(fontDir(), fileName));
+  return { name: path.basename(source, ext), fileName };
+});
+let keepAwakeId = null;
+ipcMain.handle('power:keep-awake', (_e, enabled) => {
+  if (enabled && keepAwakeId === null) keepAwakeId = powerSaveBlocker.start('prevent-display-sleep');
+  else if (!enabled && keepAwakeId !== null) { powerSaveBlocker.stop(keepAwakeId); keepAwakeId = null; }
+  return true;
+});
 ipcMain.handle('wipe', async () => {
   await fsp.rm(stateFile(), { force: true });
   await fsp.rm(coverDir(), { recursive: true, force: true });
+  await fsp.rm(path.join(userData(), 'offline'), { recursive: true, force: true });
+  await fsp.rm(fontDir(), { recursive: true, force: true });
   return true;
 });
 ipcMain.handle('open-external', (_e, url) => { if (/^https:\/\//.test(url)) shell.openExternal(url); });
@@ -132,6 +175,10 @@ app.whenReady().then(() => {
       const u = new URL(req.url);
       if (u.hostname === 'cover') {
         const f = path.join(coverDir(), path.basename(u.pathname) + '.jpg');
+        return withCors(await net.fetch(pathToFileURL(f).toString()));
+      }
+      if (u.hostname === 'font') {
+        const f = path.join(fontDir(), path.basename(u.pathname));
         return withCors(await net.fetch(pathToFileURL(f).toString()));
       }
       if (u.hostname === 'file') {
@@ -150,5 +197,5 @@ app.whenReady().then(() => {
   globalShortcut.register('MediaStop', send('stop'));
 });
 
-app.on('will-quit', () => globalShortcut.unregisterAll());
+app.on('will-quit', () => { globalShortcut.unregisterAll(); if (keepAwakeId !== null) powerSaveBlocker.stop(keepAwakeId); });
 app.on('window-all-closed', () => app.quit());

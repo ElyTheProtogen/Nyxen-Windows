@@ -1,19 +1,34 @@
 # NyxenPlayer for Windows
 
-A local-first music player (Electron). Plays MP3, M4A, AAC, WAV, OGG, Opus and FLAC from your computer.
+A local-first music player for Windows, built with Electron. Plays MP3, M4A, AAC, WAV, OGG, Opus and FLAC files from your computer.
 
-## Run it on your own PC
-1. Install Node.js 20 or newer from nodejs.org.
-2. In this folder run: `npm install` then `npm start`.
+## Run it on your PC
+1. Install Node.js 20 or newer.
+2. In this folder run `npm install`.
+3. Run `npm start`.
 
-## Build the installer
-`npm run dist` creates `dist/NyxenPlayer Setup 1.0.0.exe` (installer) and a portable `.exe`.
-On GitHub the workflow `.github/workflows/build-windows.yml` does this for you and uploads the files as the
-"NyxenPlayer-windows" artifact.
+## Build the Windows installer
+Run `npm run dist`. Electron Builder creates an NSIS installer and a portable `.exe` in `dist/`.
+The GitHub Actions workflow in `.github/workflows/build-windows.yml` builds both targets and uploads them as the `NyxenPlayer-windows` artifact.
 
-## Where your data is stored
-`%APPDATA%\nyxenplayer\nyxen-state.json` (library, playlists, settings) and `covers\` (album art).
-Your music files are never copied or changed.
+## Features
+- Local music library, folder scanning, metadata extraction, album artwork, favorites and smart playlists
+- Search by song, artist, album and genre, with recent-search history
+- Play queue, repeat/shuffle modes, queue restoration and optional resume-on-launch
+- 10-band equalizer, tone controls, reverb, custom EQ presets and playback speed
+- Listening statistics for plays, listening time, top songs, artists and genres
+- 26 built-in gradient themes, custom accent themes, imported .ttf/.otf fonts and 8 offline wallpapers
+- Original offline soundscapes with generated cover artwork
+- Timed `.lrc` and plain `.txt` lyrics, plus editable song metadata
+- Sleep timer with optional fade-out, auto-play similar tracks and keep-display-awake control
+- Keyboard shortcuts and media keys
 
-## Not included yet
-Lyrics, editing song info, Google sign-in (the Gmail address is only checked for format), drag-to-reorder playlists.
+## Offline pack
+The app bundles eight Nyxen wallpapers, three original square cover images and three original 48-second instrumental soundscapes. The soundscapes are copied into the app's user-data folder only when you choose **Add offline soundscapes** in Settings.
+
+## Data and privacy
+Library metadata, playlists, settings, lyrics and listening history are stored locally at `%APPDATA%\\nyxenplayer\\nyxen-state.json`; extracted covers and imported offline audio are stored in the NyxenPlayer user-data folder. Your original music files are never copied or modified.
+
+## Platform-specific notes
+- Android-only haptics and Android notification/media-session integration do not apply to Windows. Headphone-disconnect pause behavior is not included in this desktop build.
+- Google sign-in is not configured in this desktop build; the profile screen remains local-only.
