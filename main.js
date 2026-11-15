@@ -94,11 +94,18 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
       autoplayPolicy: 'no-user-gesture-required'
     }
   });
 
   Menu.setApplicationMenu(null);
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', (event, url) => {
+    const appUrl = pathToFileURL(path.join(__dirname, 'src', 'index.html')).toString();
+    if (url !== appUrl) event.preventDefault();
+  });
 
   win.loadFile(path.join(__dirname, 'src', 'index.html'));
 
@@ -351,9 +358,6 @@ ipcMain.handle('offline:import', async () => {
   const coverSource = path.join(__dirname, 'resources', 'offline', 'covers');
   const targetDir = path.join(userData(), 'offline');
 
-  await fsp.mkdir(targetDir, { recursive: true });
-  await fsp.mkdir(coverDir(), { recursive: true });
-
   const names = [
     'nyxen_sample_01.wav',
     'nyxen_sample_02.wav',
@@ -369,6 +373,8 @@ ipcMain.handle('offline:import', async () => {
   }
   if (missing.length) return { available: false, missing };
 
+  await fsp.mkdir(targetDir, { recursive: true });
+  await fsp.mkdir(coverDir(), { recursive: true });
   const added = [];
 
   for (let i = 0; i < names.length; i++) {
@@ -460,6 +466,7 @@ ipcMain.handle('power:keep-awake', (_e, enabled) => {
 // WIPE APPLICATION DATA
 
 ipcMain.handle('wipe', async () => {
+  if (keepAwakeId !== null) { powerSaveBlocker.stop(keepAwakeId); keepAwakeId = null; }
   await fsp.rm(stateFile(), { force: true });
   await fsp.rm(coverDir(), { recursive: true, force: true });
   await fsp.rm(path.join(userData(), 'offline'), {
@@ -473,9 +480,15 @@ ipcMain.handle('wipe', async () => {
 
 // EXTERNAL LINKS
 
-ipcMain.handle('open-external', (_e, url) => {
-  if (/^https:\/\//.test(url)) {
-    shell.openExternal(url);
+ipcMain.handle('open-external', async (_e, value) => {
+  if (typeof value !== 'string') return false;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' || url.username || url.password) return false;
+    await shell.openExternal(url.toString());
+    return true;
+  } catch {
+    return false;
   }
 });
 
