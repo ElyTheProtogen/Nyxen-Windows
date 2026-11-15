@@ -76,7 +76,7 @@ const REVERBS = [{ n: 'Off', s: 0.1, d: 8 }, { n: 'Small room', s: 0.6, d: 3 }, 
 
 /* ================= state ================= */
 const DEFAULT = () => ({
-  v: 2, profile: { name: '', email: '' }, account: null, tracks: [], videos: [], videoFolders: [], playlists: [], folders: [], nextPl: 1, lastScan: 0, lastVideoScan: 0, firstDone: false, lyrics: {}, customThemes: [], customEq: {}, recentSearches: [],
+  v: 2, profile: { name: '', email: '' }, account: null, guest: false, tracks: [], videos: [], videoFolders: [], playlists: [], folders: [], nextPl: 1, lastScan: 0, lastVideoScan: 0, firstDone: false, lyrics: {}, customThemes: [], customEq: {}, recentSearches: [],
   settings: { theme: 1, wallpaper: 0, cover: true, eqOn: true, gains: Array(10).fill(0), pre: 0, bass: 0, preset: 'Flat', rvPreset: 0, rvMix: 0.3, volume: 0.8, speed: 1, autoResume: false, rememberQueue: true, autoplaySimilar: false, buttonSounds: true, sleepFade: true, autoImport: true, keepAwake: false, mode: 'all', sort: 'title', asc: true, cat: 'tracks' },
   last: { id: null, pos: 0 }, savedQueue: [], savedQueueIndex: 0
 });
@@ -159,6 +159,7 @@ function normalizeState(saved) {
       name: typeof saved.profile?.name === 'string' ? saved.profile.name : '',
       email: typeof saved.profile?.email === 'string' ? saved.profile.email : ''
     },
+    guest: !!saved.guest,
     account: isObject(saved.account) && typeof saved.account.sub === 'string' ? {
       sub: saved.account.sub.slice(0, 160),
       name: typeof saved.account.name === 'string' ? saved.account.name.slice(0, 120) : '',
@@ -195,7 +196,7 @@ let saveTimer = 0;
 const save = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => { Promise.resolve(window.nyxen.saveState(S)).catch(() => toast('Could not save NyxenPlayer data')); }, 500); };
 let toastT = 0;
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 3200); }
-const signedIn = () => !!(S.account && S.account.email);
+const signedIn = () => !!S.guest || !!(S.account && S.account.email);
 document.addEventListener('error', (e) => { if (e.target && e.target.tagName === 'IMG') e.target.remove(); }, true);
 
 /* ================= audio engine (real Web Audio effects) ================= */
@@ -521,8 +522,8 @@ function pageSettings() {
   if (key === 'overview') return '<div class="page settings-home"><div class="settings-heading"><h1>Settings</h1><p class="sub">Choose a section to customize NyxenPlayer.</p></div><div class="settings-card-grid">'+cards.map(c=>'<button class="settings-card" data-act="settings-page" data-key="'+c[0]+'"><span class="settings-card-icon">'+c[3]+'</span><span class="settings-card-copy"><b>'+c[1]+'</b><small>'+c[2]+'</small></span><span class="settings-card-arrow">›</span></button>').join('')+'</div></div>';
   if (key === 'account') {
     const account = S.account;
-    const identity = account ? '<div class="split"><div class="grow"><b>'+esc(account.name)+'</b><p class="sub">'+esc(account.email)+'</p><span class="sub">Signed in with email</span></div></div>' : '<p class="sub">No Nyxen account is currently signed in.</p>';
-    return '<div class="page">'+header('Account','Manage your Nyxen account.')+'<div class="glass"><h3>Nyxen account</h3>'+identity+'<div class="toolbar"><button class="btn" data-act="edit-profile">'+(account?'Change account':'Sign in or create account')+'</button>'+(account?'<button class="btn ghost" data-act="sign-out">Sign out</button>':'')+'</div></div><div class="glass"><h3>Local profile</h3><p>'+esc(S.profile.name)+' · '+esc(S.profile.email)+'</p><button class="btn ghost" data-act="edit-profile">Edit local profile</button></div><div class="glass"><h3>Local data</h3><p>Your library, playlists, favorites and settings are stored on this computer. Your music files are never deleted by Nyxen.</p><button class="btn danger" data-act="wipe">Delete all my data</button></div></div>';
+    const identity = account ? '<div class="split"><div class="grow"><b>'+esc(account.name)+'</b><p class="sub">'+esc(account.email)+'</p><span class="sub">Signed in with email</span></div></div>' : S.guest ? '<div class="split"><div class="grow"><b>Guest session</b><p class="sub">Using Nyxen locally without an account.</p></div></div>' : '<p class="sub">No Nyxen account is currently signed in.</p>';
+    return '<div class="page">'+header('Account','Manage your Nyxen account.')+'<div class="glass"><h3>Nyxen account</h3>'+identity+'<div class="toolbar"><button class="btn" data-act="edit-profile">'+(account?'Change account':S.guest?'Sign in or create account':'Sign in or create account')+'</button>'+(account||S.guest?'<button class="btn ghost" data-act="sign-out">'+(S.guest?'Exit guest mode':'Sign out')+'</button>':'')+'</div></div><div class="glass"><h3>Local profile</h3><p>'+esc(S.profile.name)+' · '+esc(S.profile.email)+'</p><button class="btn ghost" data-act="edit-profile">Edit local profile</button></div><div class="glass"><h3>Local data</h3><p>Your library, playlists, favorites and settings are stored on this computer. Your music files are never deleted by Nyxen.</p><button class="btn danger" data-act="wipe">Delete all my data</button></div></div>';
   }
   if (key === 'library') return '<div class="page">'+header('Library & import','Manage the folders and media Nyxen scans.')+'<div class="glass"><h3>Music library</h3><p>'+S.folders.length+' watched folders · '+S.tracks.length+' songs</p><div class="toolbar"><button class="btn" data-act="import-folder">Import a folder</button><button class="btn ghost" data-act="import-files">Import files</button><button class="btn ghost" data-act="rescan">Rescan folders</button></div></div><div class="glass"><h3>Video library</h3><p>'+(S.videoFolders||[]).length+' watched folders · '+(S.videos||[]).length+' videos</p><div class="toolbar"><button class="btn ghost" data-act="import-video-folder">Import video folder</button><button class="btn ghost" data-act="import-video-files">Import videos</button></div></div><div class="glass"><h3>Offline soundscapes</h3><p>Import the optional Nyxen offline soundscape collection when its audio assets are included in this build.</p><button class="btn ghost" data-act="offline-pack">Add offline soundscapes</button></div><div class="glass"><h3>Automatic scanning</h3>'+toggle('autoImport','Auto-import watched folders','Rescan watched music and video folders when Nyxen opens.')+'</div></div>';
   if (key === 'appearance') {
@@ -649,7 +650,7 @@ function pickPlaylist(toAdd) {
 function greet(first) { const n = S.profile.name; toast(first || !S.firstDone ? `Welcome to NyxenPlayer, ${n}!` : `${greeting()}, ${n}`); S.firstDone = true; save(); }
 function showWelcome() {
   const w = $('#welcome'); w.classList.remove('hidden');
-  w.innerHTML = `<div class="dialog" style="text-align:center"><img class="logo-big" src="logo.png" alt=""><h2 style="margin-top:12px">Welcome to NyxenPlayer</h2><div class="sub">Sign in to your Nyxen account to continue.</div><div class="sub" style="font-size:11px;margin-bottom:12px">Sign in or create an account with your email address</div><input class="field" id="w-mail" type="email" autocomplete="email" placeholder="Email address"><input class="field" id="w-password" type="password" autocomplete="current-password" placeholder="Password"><div class="toolbar" style="justify-content:center"><button class="chip on" id="w-signin">Sign in</button><button class="chip" id="w-register">Create account</button></div><div class="err" id="w-err"></div><div class="sub" style="font-size:11px">Email verification is not required. Nyxen never stores your password.</div><div class="actions"><button class="btn" id="w-go" style="width:100%;justify-content:center">Sign in</button></div></div>`;
+  w.innerHTML = `<div class="dialog" style="text-align:center"><img class="logo-big" src="logo.png" alt=""><h2 style="margin-top:12px">Welcome to NyxenPlayer</h2><div class="sub">Sign in to sync your account, or continue locally as a guest.</div><div class="sub" style="font-size:11px;margin-bottom:12px">Sign in or create an account with your email address</div><input class="field" id="w-mail" type="email" autocomplete="email" placeholder="Email address"><input class="field" id="w-password" type="password" autocomplete="current-password" placeholder="Password"><div class="toolbar" style="justify-content:center"><button class="chip on" id="w-signin">Sign in</button><button class="chip" id="w-register">Create account</button></div><div class="err" id="w-err"></div><div class="sub" style="font-size:11px">Email verification is not required. Nyxen never stores your password.</div><div class="actions"><button class="btn" id="w-go" style="width:100%;justify-content:center">Sign in</button><button class="btn ghost" id="w-guest" style="width:100%;justify-content:center;margin-top:8px">Continue as Guest</button></div></div>`;
   let createAccount = false;
   const signIn = $('#w-signin'), register = $('#w-register'), submitButton = $('#w-go');
   const setMode = (create) => {
@@ -667,11 +668,12 @@ function showWelcome() {
       const result = await window.nyxen.emailAuth({ email, password, createAccount });
       if (!result || !result.ok) throw new Error(result && result.error ? result.error : 'Authentication failed.');
       if (!result.profile) throw new Error('Firebase did not return an account.');
-      S.account = result.profile; S.profile = { name: result.profile.name, email: result.profile.email };
+      S.account = result.profile; S.guest = false; S.profile = { name: result.profile.name, email: result.profile.email };
       save(); w.classList.add('hidden'); w.innerHTML = ''; greet(!S.firstDone); render();
     } catch (err) { error.textContent = err && err.message ? err.message : 'Authentication failed.'; }
     finally { submitButton.disabled = false; }
   };
+  $('#w-guest').addEventListener('click', () => { S.account = null; S.guest = true; S.profile = { name: 'Guest', email: '' }; save(); w.classList.add('hidden'); w.innerHTML = ''; greet(!S.firstDone); render(); });
   submitButton.addEventListener('click', submit);
   $('#w-password').addEventListener('keydown', (event) => { if (event.key === 'Enter') submit(); });
 }
@@ -1000,7 +1002,7 @@ const ACT = {
   sleep: (d) => { setSleep(+d.m); render(); },
   'sleep-track': () => setSleepEndTrack(),
   'edit-profile': () => showWelcome(),
-    'sign-out': () => { S.profile = { name: '', email: '' }; S.account = null; save(); showWelcome(); },
+    'sign-out': () => { S.profile = { name: '', email: '' }; S.account = null; S.guest = false; save(); showWelcome(); },
   wipe: async () => {
     if (!await confirmBox('Delete all data?', 'This removes your library, playlists, favorites, play counts, settings and profile from NyxenPlayer. Your music files are not touched.', 'Delete')) return;
     clearTimeout(saveTimer); saveTimer = 0;
