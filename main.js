@@ -652,14 +652,9 @@ async function firebaseEmailAuth(input) {
   if (password.length < 6) throw new Error('Password must be at least 6 characters.');
   if (createAccount) {
     const created = await firebaseAuthRequest('accounts:signUp', { email, password, returnSecureToken: true });
-    await firebaseAuthRequest('accounts:sendOobCode', { requestType: 'VERIFY_EMAIL', idToken: created.idToken });
-    return { ok: true, pendingVerification: true, email };
+    return { ok: true, profile: { sub: String(created.localId), name: String(created.displayName || email).slice(0, 120), email: String(created.email || email).slice(0, 254), picture: '' } };
   }
   const user = await firebaseAuthRequest('accounts:signInWithPassword', { email, password, returnSecureToken: true });
-  if (user.emailVerified !== true) {
-    await firebaseAuthRequest('accounts:sendOobCode', { requestType: 'VERIFY_EMAIL', idToken: user.idToken }).catch(() => {});
-    throw new Error('Please verify your email first. We sent a verification link to your inbox.');
-  }
   return { ok: true, profile: { sub: String(user.localId), name: String(user.displayName || user.email).slice(0, 120), email: String(user.email).slice(0, 254), picture: '' } };
 }
 
