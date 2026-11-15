@@ -382,7 +382,7 @@ async function applyCoverAccent() {
 }
 
 /* ================= UI helpers ================= */
-const V = { page: 'home', arg: null, group: null, q: '', sf: 'all' };
+const V = { page: 'home', arg: null, group: null, q: '', sf: 'all', selected: [] };
 let ctn = 0; const CTX = new Map();
 const reg = (list) => { const k = ++ctn; CTX.set(k, list); if (CTX.size > 40) CTX.delete(CTX.keys().next().value); return k; };
 const ids = (list) => list.map((t) => t.id);
@@ -421,7 +421,7 @@ function pageHome() {
   return h + car('Recently played', recent) + car('Most played', most) + car('Favorites', favs) + car('Recently added', added) + '</div>';
 }
 function pageLibrary() {
-  const cats = [['tracks', 'Tracks'], ['albums', 'Albums'], ['artists', 'Artists'], ['genres', 'Genres'], ['favorites', 'Favorites']];
+  const cats = [['tracks', 'Tracks'], ['albums', 'Albums'], ['artists', 'Artists'], ['genres', 'Genres'], ['favorites', 'Favorites'], ['duplicates', 'Duplicates']];
   const cat = S.settings.cat;
   let h = `<div class="page"><div class="split"><div class="grow"><h1>Library</h1><div class="sub">${S.tracks.length} songs · ${new Set(S.tracks.map((t) => t.album)).size} albums</div></div><button class="btn" data-act="import-folder">${svg('add', 18)} Import folder</button><button class="btn ghost" data-act="import-files">Import files</button></div>`;
   h += `<div class="toolbar">${cats.map(([k, n]) => `<button class="chip ${cat === k ? 'on' : ''}" data-act="cat" data-cat="${k}">${n}</button>`).join('')}`;
@@ -432,9 +432,9 @@ function pageLibrary() {
     const ts = groupTracks(), k = reg(ids(ts));
     return h + `<div class="split" style="margin:12px 0"><button class="chip" data-act="back">&larr; Back</button><div class="grow"><h2 style="margin:0">${esc(V.group.name)}</h2><div class="sub">${ts.length} songs</div></div><button class="btn" data-act="play-group">${svg('play', 18)} Play</button><button class="btn ghost" data-act="shuffle-group">${svg('shuffle', 18)} Shuffle</button></div>${ts.map((t, i) => trow(t, k, i)).join('')}</div>`;
   }
-  if (cat === 'tracks' || cat === 'favorites') {
-    const ts = cat === 'tracks' ? sortTracks(S.tracks) : sortTracks(S.tracks.filter((t) => t.fav)); const k = reg(ids(ts));
-    return h + (ts.length ? ts.map((t, i) => trow(t, k, i)).join('') : emptyState('No favorites yet', 'Click the heart on a song to add it here.')) + '</div>';
+  if (cat === 'tracks' || cat === 'favorites' || cat === 'duplicates') {
+    const ts = cat === 'tracks' ? sortTracks(S.tracks) : cat === 'favorites' ? sortTracks(S.tracks.filter(t=>t.fav)) : sortTracks(duplicateTracks()); const k = reg(ids(ts));
+    return h + (ts.length ? ts.map((t, i) => trow(t, k, i)).join('') : emptyState(cat === 'duplicates' ? 'No duplicates found' : 'No tracks here yet', cat === 'duplicates' ? 'Matching title and artist appear here. Original files are never deleted automatically.' : 'Add music or change your filters.')) + '</div>';
   }
   const field = { albums: 'album', artists: 'artist', genres: 'genre' }[cat]; const map = new Map();
   S.tracks.forEach((t) => { if (!map.has(t[field])) map.set(t[field], []); map.get(t[field]).push(t); });
@@ -448,17 +448,24 @@ function pageVideos() {
   h += videos.map(v => '<div class="video-row"><div class="video-mark">▶</div><div class="tmeta"><b>' + esc(v.title) + '</b><span>' + esc(v.path.split(/[\\/]/).pop()) + '</span><em>' + playsText(v.plays || 0) + '</em></div><button class="btn" data-act="play-video" data-id="' + esc(v.id) + '">Play</button><button class="icon" data-act="remove-video" data-id="' + esc(v.id) + '" title="Remove from library">' + svg('del', 19) + '</button></div>').join('');
   return h + '</div>';
 }
+function duplicateTracks() {
+  const key = t => [t.title,t.artist].map(x=>String(x||'').toLowerCase().replace(/\\.[^.]+$/,'').replace(/[^a-z0-9]+/g,' ').trim()).join('|');
+  const counts=new Map(); S.tracks.forEach(t=>counts.set(key(t),(counts.get(key(t))||0)+1));
+  return S.tracks.filter(t=>counts.get(key(t))>1);
+}
 function searchResults() {
   const q = (V.q || '').trim().toLowerCase();
   if (!q) return S.recentSearches?.length ? `<div class="sub" style="margin:14px 0">Recent searches</div><div class="toolbar">${S.recentSearches.slice(0,8).map(x=>`<button class="chip" data-act="search-recent" data-q="${esc(x)}">${esc(x)}</button>`).join('')}</div>` : `<div class="empty"><div class="art"><span class="ph">&#9834;</span></div>Find anything in your library</div>`;
-  const tokens = q.split(/\s+/), fields = V.sf === 'all' ? ['title', 'artist', 'album', 'genre'] : [V.sf];
-  const res = S.tracks.filter((t) => { const hay = fields.map((f) => t[f]).join(' ').toLowerCase(); return tokens.every((x) => hay.includes(x)); });
+  const tokens = q.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
+  const fields = V.sf === 'all' ? ['title','artist','album','genre','path'] : [V.sf];
+  const parsed = tokens.map(raw => { const negative=raw.startsWith('-'), token=negative?raw.slice(1):raw, m=token.match(/^(title|artist|album|genre|file|path):(.+)$/); return {negative,field:m?(m[1]==='file'?'path':m[1]):null,value:(m?m[2]:token).replace(/^"|"$/g,'').toLowerCase()}; });
+  const res = S.tracks.filter(t=>parsed.every(x=>{const hay=(x.field?[t[x.field]||'']:fields.map(f=>t[f]||'')).join(' ').toLowerCase(),hit=hay.includes(x.value);return x.negative?!hit:hit;}));
   if (!res.length) return `<div class="empty">No results for &ldquo;${esc(q)}&rdquo;</div>`;
   const k = reg(ids(res));
   return `<div class="sub">${res.length} results</div>` + res.slice(0, 300).map((t, i) => trow(t, k, i)).join('');
 }
 function pageSearch() {
-  return `<div class="page"><h1>Search</h1><div class="toolbar"><input id="q" class="field" style="flex:1;min-width:260px" placeholder="Search songs, artists, albums, genres" value="${esc(V.q)}" autocomplete="off">${['all', 'title', 'artist', 'album', 'genre'].map((f) => `<button class="chip ${V.sf === f ? 'on' : ''}" data-act="sf" data-f="${f}">${f === 'all' ? 'All' : f[0].toUpperCase() + f.slice(1) + 's'}</button>`).join('')}</div><div id="results">${searchResults()}</div></div>`;
+  return `<div class="page"><h1>Search</h1><div class="toolbar"><input id="q" class="field" style="flex:1;min-width:260px" placeholder="artist:name, album:name, -term, or plain words" value="${esc(V.q)}" autocomplete="off">${['all', 'title', 'artist', 'album', 'genre'].map((f) => `<button class="chip ${V.sf === f ? 'on' : ''}" data-act="sf" data-f="${f}">${f === 'all' ? 'All' : f[0].toUpperCase() + f.slice(1) + 's'}</button>`).join('')}</div><div id="results">${searchResults()}</div></div>`;
 }
 function pagePlaylists() {
   const smart = SMART.map((s) => { const ts = s.f(S.tracks); return `<div class="trow" data-act="open-pl" data-pl="${s.id}">${collage(ts.slice(0, 4))}<div class="tmeta"><b>${s.n}</b><span>${ts.length ? ts.length + ' songs · Auto playlist' : 'Play a few songs to fill this'}</span></div><button class="icon" data-act="play-pl" data-pl="${s.id}">${svg('play', 22)}</button></div>`; }).join('');
