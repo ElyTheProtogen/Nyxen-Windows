@@ -39,6 +39,9 @@ jobs:
             throw "package.json was not found in the repository root."
           }
 
+      - name: Check JavaScript syntax
+        run: npm run check
+
       - name: Install dependencies
         run: npm install
 
