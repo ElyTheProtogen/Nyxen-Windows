@@ -633,6 +633,7 @@ async function googleOAuthSignIn() {
   return new Promise((resolve, reject) => {
     let settled = false;
     let timeout = null;
+    let redirectUri = null;
     const finish = (error, value) => {
       if (settled) return;
       settled = true;
@@ -721,7 +722,7 @@ async function googleOAuthSignIn() {
         finish(new Error('Could not start the local Google sign-in listener.'));
         return;
       }
-      const redirectUri = 'http://127.0.0.1:' + address.port + '/oauth2callback';
+      redirectUri = 'http://127.0.0.1:' + address.port + '/oauth2callback';
       const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
       authUrl.search = new URLSearchParams({
         client_id: GOOGLE_DESKTOP_CLIENT_ID,
