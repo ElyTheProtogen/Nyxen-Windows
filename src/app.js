@@ -191,7 +191,22 @@ audio.addEventListener('ended', () => {
   if(sleepTrack){sleepTrack=false;audio.pause();toast('Sleep timer finished');if(V.page==='settings')render();return;}
   if (S.settings.mode === 'one') { audio.currentTime = 0; counted = touched = false; play(); } else next(false);
 });
-audio.addEventListener('loadedmetadata', () => { if (resumePos) { audio.currentTime = resumePos; resumePos = 0; } updateProgress(); });
+const mediaDuration = () => {
+  const nativeDuration = Number(audio.duration);
+  if (Number.isFinite(nativeDuration) && nativeDuration > 0) return nativeDuration;
+  const storedDuration = Number(cur && cur.duration);
+  return Number.isFinite(storedDuration) && storedDuration > 0 ? storedDuration : 0;
+};
+audio.addEventListener('loadedmetadata', () => {
+  if (resumePos > 0 && Number.isFinite(audio.duration) && audio.duration > 0) {
+    audio.currentTime = clamp(resumePos, 0, Math.max(0, audio.duration - 0.05));
+    resumePos = 0;
+  }
+  updateProgress();
+});
+audio.addEventListener('durationchange', updateProgress);
+audio.addEventListener('seeking', updateProgress);
+audio.addEventListener('seeked', updateProgress);
 audio.addEventListener('error', () => { if (cur) { toast('Cannot play "' + cur.title + '". Skipping.'); if (Q.ids.length > 1) setTimeout(() => next(true), 600); } });
 audio.addEventListener('timeupdate', () => {
   if (!cur) return;
@@ -379,10 +394,29 @@ function render() {
 
 /* ================= player bar, now playing, queue ================= */
 function updateProgress() {
-  const d = audio.duration && isFinite(audio.duration) ? audio.duration : cur ? cur.duration : 0, t = audio.currentTime || 0;
-  $$('.tcur').forEach((el) => { el.textContent = fmt(t); }); $$('.tdur').forEach((el) => { el.textContent = fmt(d); });
-  if (!seeking) $$('.seekin').forEach((el) => { const p = d ? (t / d) * 100 : 0; el.value = p * 10; el.style.setProperty('--p', p + '%'); });
+  const d = mediaDuration();
+  const t = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+  const safeTime = d ? clamp(t, 0, d) : 0;
+  $('.tcur').forEach((el) => { el.textContent = fmt(safeTime); });
+  $('.tdur').forEach((el) => { el.textContent = fmt(d); });
+  if (!seeking) {
+    $('.seekin').forEach((el) => {
+      const p = d ? clamp(safeTime / d, 0, 1) * 100 : 0;
+      el.value = String(Math.round(p * 10));
+      el.style.setProperty('--p', p + '%');
+    });
+  }
   updateLyricsProgress();
+}
+function commitSeek(input) {
+  if (!input) return;
+  const d = mediaDuration();
+  if (d > 0) {
+    const fraction = clamp(Number(input.value) / 1000, 0, 1);
+    try { audio.currentTime = clamp(fraction * d, 0, Math.max(0, d - 0.05)); } catch {}
+  }
+  seeking = false;
+  updateProgress();
 }
 function controls() {
   const m = S.settings.mode, playing = !audio.paused;
@@ -751,7 +785,18 @@ document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-act]');
   if (el && ACT[el.dataset.act]) ACT[el.dataset.act](el.dataset, e);
 });
-const setP = (el) => { if (!el.classList.contains('v')) el.style.setProperty('--p', ((el.value - el.min) / (el.max - el.min)) * 100 + '%'); };
+const setP = (el) => {
+  if (!el.classList.contains('v')) {
+    const min = Number(el.min) || 0, max = Number(el.max) || 100;
+    const p = max > min ? clamp((Number(el.value) - min) / (max - min), 0, 1) * 100 : 0;
+    el.style.setProperty('--p', p + '%');
+  }
+};
+let activeSeek = null;
+document.addEventListener('pointerdown', (e) => {
+  const input = e.target.closest && e.target.closest('.seekin');
+  if (input) { activeSeek = input; seeking = true; }
+});
 document.addEventListener('input', (e) => {
   const t = e.target; if (t.type === 'range') setP(t);
   if (t.id === 'q') { V.q = t.value; $('#results').innerHTML = searchResults(); }
@@ -761,12 +806,25 @@ document.addEventListener('input', (e) => {
   else if (t.id === 'bass') { S.settings.bass = +t.value; $('#bass-v').textContent = t.value + ' dB'; applyFx(); save(); }
   else if (t.id === 'rvmix') { S.settings.rvMix = +t.value; $('#rvmix-v').textContent = t.value; applyFx(); save(); }
   else if (t.id === 'speed') { S.settings.speed = +t.value; audio.playbackRate = +t.value; save(); }
-   else if (t.id === 'vol') { S.settings.volume = +t.value / 100; muted = false; applyFx(); save(); }
-  else if (t.classList && t.classList.contains('seekin')) { seeking = true; const d = audio.duration || (cur && cur.duration) || 0; $$('.tcur').forEach((el) => { el.textContent = fmt((t.value / 1000) * d); }); }
+  else if (t.id === 'vol') { S.settings.volume = +t.value / 100; muted = false; applyFx(); save(); }
+  else if (t.classList && t.classList.contains('seekin')) {
+    seeking = true;
+    const d = mediaDuration();
+    if (d > 0) $('.tcur').forEach((el) => { el.textContent = fmt((clamp(Number(t.value) / 1000, 0, 1)) * d); });
+  }
 });
 document.addEventListener('change', (e) => {
   const t = e.target;
-  if (t.classList && t.classList.contains('seekin')) { const d = audio.duration || (cur && cur.duration) || 0; if (d) audio.currentTime = (t.value / 1000) * d; seeking = false; updateProgress(); }
+  if (t.classList && t.classList.contains('seekin')) { commitSeek(t); activeSeek = null; }
+});
+document.addEventListener('pointerup', (e) => {
+  if (activeSeek) { commitSeek(activeSeek); activeSeek = null; }
+});
+document.addEventListener('pointercancel', () => {
+  if (activeSeek) { seeking = false; activeSeek = null; updateProgress(); }
+});
+window.addEventListener('blur', () => {
+  if (activeSeek) { commitSeek(activeSeek); activeSeek = null; }
 });
 document.addEventListener('keydown', (e) => {
   const tag = (e.target.tagName || '').toLowerCase();
