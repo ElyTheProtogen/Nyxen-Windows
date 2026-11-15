@@ -278,3 +278,8 @@ h2 { letter-spacing: -.025em; }
 #video-audio-track { border:1px solid rgba(255,255,255,.12); border-radius:12px; padding:9px 13px; color:var(--text); background:rgba(255,255,255,.055); font:inherit; font-size:12px; cursor:pointer; }
 #video-audio-track:hover:not(:disabled) { background:color-mix(in srgb,var(--accent) 20%,rgba(255,255,255,.08)); border-color:color-mix(in srgb,var(--accent) 55%,transparent); }
 #video-audio-track:disabled { opacity:.55; cursor:not-allowed; }
+
+/* User photo wallpapers */
+.wallpaper-grid .wallpaper{min-height:116px;}
+.wallpaper-grid .wallpaper img{transition:transform .35s ease,opacity .2s ease;}
+.wallpaper-grid .wallpaper:hover img{transform:scale(1.045);opacity:1;}
