@@ -124,7 +124,8 @@ function normalizeState(saved) {
   settings.gains = Array.isArray(settings.gains) && settings.gains.length === 10
     ? settings.gains.map((value) => finite(value, 0, -12, 12))
     : d.settings.gains.slice();
-  settings.theme = Math.floor(finite(settings.theme, d.settings.theme, 0));
+  const customThemeCount = Array.isArray(saved.customThemes) ? saved.customThemes.length : 0;
+  settings.theme = Math.floor(finite(settings.theme, d.settings.theme, 0, 25 + customThemeCount));
   settings.wallpaper = Math.floor(finite(settings.wallpaper, 0, 0, 8));
   settings.volume = finite(settings.volume, d.settings.volume, 0, 1);
   settings.speed = finite(settings.speed, 1, 0.5, 2);
@@ -496,22 +497,33 @@ function pageStats() {
 const ABOUT = 'NyxenPlayer is a music player built around one simple idea: your music, your way. It plays the songs you already own, whether they are MP3, M4A, OGG, WAV or FLAC files stored on your computer, and wraps them in a fast, dark and animated design with gradient themes and a real sound studio.\n\nYour music never leaves your computer. There are no ads, no tracking and no servers. Your playlists, favorites, play counts and settings are stored only on this device, and you can delete everything at any time in Settings.\n\nMade by: [your name]    Contact: your-email@gmail.com';
 let sleepMin = 0, sleepEnd = 0, sleepTimer = 0, sleepTrack = false;
 function pageSettings() {
-  const th = THEMES.map((t, i) => `<div class="sw ${S.settings.theme === i ? 'on' : ''}" data-act="theme" data-i="${i}"><i style="background:linear-gradient(180deg,${t.g.join(',')})"></i>${esc(t.n)}</div>`).join('');
-  const wallpapers = Array.from({length:8},(_,i)=>`<button class="wallpaper ${S.settings.wallpaper===i+1?'on':''}" data-act="wallpaper" data-i="${i+1}"><img src="../resources/offline/wallpapers/nyxen_wallpaper_${String(i+1).padStart(2,'0')}.png"><span>${i+1}</span></button>`).join('');
-  const toggle = (key,label,desc) => `<div class="setting-row"><div><b>${label}</b><small>${desc}</small></div><button class="chip ${S.settings[key]?'on':''}" data-act="setting-toggle" data-key="${key}">${S.settings[key]?'On':'Off'}</button></div>`;
-  return `<div class="page"><h1>Settings</h1>
-<div class="glass"><h3>Account</h3><p>${esc(S.profile.name)} &middot; ${esc(S.profile.email)}</p><div class="toolbar"><button class="btn ghost" data-act="edit-profile">Edit profile</button><button class="btn ghost" data-act="sign-out">Sign out</button><button class="btn danger" data-act="wipe">Delete all my data</button></div><p class="sub">Google sign-in is not connected in this desktop build; profile details stay local.</p></div>
-<div class="glass"><h3>Library & import</h3><p>${S.folders.length} watched folders &middot; ${S.tracks.length} songs</p><div class="toolbar"><button class="btn" data-act="import-folder">Import a folder</button><button class="btn ghost" data-act="import-files">Import files</button><button class="btn ghost" data-act="rescan">Rescan folders</button><button class="btn ghost" data-act="offline-pack">Add offline soundscapes</button><button class="btn ghost" data-act="import-video-files">Import videos</button></div></div>
-<div class="glass"><h3>Appearance</h3><div class="split"><span class="grow">Match colors to album cover</span><button class="chip ${S.settings.cover?'on':''}" data-act="cover-toggle">${S.settings.cover?'On':'Off'}</button></div><div class="swatches">${th}</div><h3 style="margin-top:18px">Custom theme</h3><div class="toolbar"><input class="field" id="custom-theme-name" placeholder="Theme name" maxlength="24"><input type="color" id="custom-theme-color" value="#b14bff" title="Accent color"><button class="btn ghost" data-act="save-custom-theme">Save palette</button></div><h3 style="margin-top:18px">Wallpaper collection</h3><p>Eight original Nyxen wallpapers, available offline.</p><div class="wallpaper-grid"><button class="wallpaper ${!S.settings.wallpaper?'on':''}" data-act="wallpaper" data-i="0"><span>No wallpaper</span></button>${wallpapers}</div></div>
-<div class="glass"><h3>Fonts & custom themes</h3><p>Use a local .ttf or .otf font across the desktop player. Current: ${esc(S.settings.customFontName || "System default")}</p><div class="toolbar"><button class="btn ghost" data-act="import-font">Import font</button><button class="btn ghost" data-act="reset-font">Use system font</button></div></div><div class="glass"><h3>Playback</h3>${toggle('autoResume','Resume playback on launch','Continue playing automatically when Nyxen opens.')}${toggle('rememberQueue','Save playback queue','Restore the same songs and playback position next time.')}${toggle('autoplaySimilar','Auto-play similar tracks','Continue with an unqueued artist or genre match when the queue ends.')}${toggle('sleepFade','Fade out before stopping','Gradually lower volume during the final 20 seconds of the sleep timer.')}${toggle('buttonSounds','Button sounds','Play a subtle UI sound when supported.')}${toggle('autoImport','Auto-import watched folders','Rescan watched folders automatically when Nyxen opens.')}${toggle('keepAwake','Keep display awake','Prevent the display from sleeping while music is playing.')}<div class="setting-row"><div><b>Playback speed</b><small>Adjust the playback rate from 0.5× to 2×.</small></div><select id="speed" class="field compact">${[0.5,0.75,0.9,1,1.1,1.25,1.5,1.75,2].map(v=>`<option value="${v}" ${Number(S.settings.speed||1)===v?'selected':''}>${v}×</option>`).join('')}</select></div></div>
-<div class="glass"><h3>Sleep timer</h3><div class="toolbar">${[0, 15, 30, 45, 60].map((m) => `<button class="chip ${sleepMin === m ? 'on' : ''}" data-act="sleep" data-m="${m}">${m ? m + ' min' : 'Off'}</button>`).join('')}<button class="chip ${sleepTrack?'on':''}" data-act="sleep-track">End of track</button></div><p>Music fades out over the last 20 seconds when fade-out is enabled.</p></div>
-<div class="glass"><h3>Keyboard shortcuts</h3><p>Space: play or pause
-Left / Right: seek 5 seconds
-Ctrl + Left / Right: previous or next song
-Up / Down: volume
-M: mute
-Media keys also work.</p></div>
-<div class="glass"><h3>About NyxenPlayer</h3><p>${esc(ABOUT)}</p></div></div>`;
+  const key = V.arg || 'overview';
+  const toggle = (name,label,desc) => '<div class="setting-row"><div><b>'+label+'</b><small>'+desc+'</small></div><button class="chip '+(S.settings[name]?'on':'')+'" data-act="setting-toggle" data-key="'+name+'">'+(S.settings[name]?'On':'Off')+'</button></div>';
+  const header = (title,desc) => '<div class="settings-heading"><button class="chip" data-act="settings-page" data-key="overview">← All settings</button><h1>'+title+'</h1><p class="sub">'+desc+'</p></div>';
+  const cards = [
+    ['account','Account','Profile, sign out and local data','◉'],
+    ['library','Library & import','Music folders, video files and scanning','▤'],
+    ['appearance','Appearance','Themes, accent colors and wallpapers','◐'],
+    ['fonts','Fonts','Choose a custom font for Nyxen','Aa'],
+    ['playback','Playback','Resume, queue, speed and playback behavior','▶'],
+    ['sleep','Sleep timer','Timer presets and fade-out behavior','◷'],
+    ['shortcuts','Keyboard shortcuts','Keys and media controls','⌘'],
+    ['about','About','Version, credits and app information','ⓘ']
+  ];
+  if (key === 'overview') return '<div class="page settings-home"><div class="settings-heading"><h1>Settings</h1><p class="sub">Choose a section to customize NyxenPlayer.</p></div><div class="settings-card-grid">'+cards.map(c=>'<button class="settings-card" data-act="settings-page" data-key="'+c[0]+'"><span class="settings-card-icon">'+c[3]+'</span><span class="settings-card-copy"><b>'+c[1]+'</b><small>'+c[2]+'</small></span><span class="settings-card-arrow">›</span></button>').join('')+'</div></div>';
+  if (key === 'account') return '<div class="page">'+header('Account','Your local NyxenPlayer profile and data.')+'<div class="glass"><h3>Profile</h3><p>'+esc(S.profile.name)+' · '+esc(S.profile.email)+'</p><div class="toolbar"><button class="btn ghost" data-act="edit-profile">Edit profile</button><button class="btn ghost" data-act="sign-out">Sign out</button></div><p class="sub">Google sign-in is not connected in this desktop build; profile details stay local.</p></div><div class="glass"><h3>Local data</h3><p>Your library, playlists, favorites and settings are stored on this computer. Your music files are never deleted by Nyxen.</p><button class="btn danger" data-act="wipe">Delete all my data</button></div></div>';
+  if (key === 'library') return '<div class="page">'+header('Library & import','Manage the folders and media Nyxen scans.')+'<div class="glass"><h3>Music library</h3><p>'+S.folders.length+' watched folders · '+S.tracks.length+' songs</p><div class="toolbar"><button class="btn" data-act="import-folder">Import a folder</button><button class="btn ghost" data-act="import-files">Import files</button><button class="btn ghost" data-act="rescan">Rescan folders</button></div></div><div class="glass"><h3>Video library</h3><p>'+(S.videoFolders||[]).length+' watched folders · '+(S.videos||[]).length+' videos</p><div class="toolbar"><button class="btn ghost" data-act="import-video-folder">Import video folder</button><button class="btn ghost" data-act="import-video-files">Import videos</button></div></div><div class="glass"><h3>Offline soundscapes</h3><p>Import the optional Nyxen offline soundscape collection when its audio assets are included in this build.</p><button class="btn ghost" data-act="offline-pack">Add offline soundscapes</button></div><div class="glass"><h3>Automatic scanning</h3>'+toggle('autoImport','Auto-import watched folders','Rescan watched music and video folders when Nyxen opens.')+'</div></div>';
+  if (key === 'appearance') {
+    const th = THEMES.map((t,i)=>'<button class="sw '+(S.settings.theme===i?'on':'')+'" data-act="theme" data-i="'+i+'" aria-label="Use '+esc(t.n)+' theme"><i style="background:linear-gradient(180deg,'+t.g.join(',')+')"></i>'+esc(t.n)+'</button>').join('');
+    const wallpapers = Array.from({length:8},(_,i)=>'<button class="wallpaper '+(S.settings.wallpaper===i+1?'on':'')+'" data-act="wallpaper" data-i="'+(i+1)+'"><img loading="lazy" src="nyxen://wallpaper/nyxen_wallpaper_'+String(i+1).padStart(2,'0')+'.png" alt=""><span>Wallpaper '+(i+1)+'</span></button>').join('');
+    return '<div class="page">'+header('Appearance','Change Nyxen’s colors, theme and background.')+'<div class="glass"><div class="split"><div class="grow"><h3>Album color matching</h3><p>Use the current song’s cover art to tint the player accent.</p></div><button class="chip '+(S.settings.cover?'on':'')+'" data-act="cover-toggle">'+(S.settings.cover?'On':'Off')+'</button></div></div><div class="glass"><h3>Built-in & custom themes</h3><p>Choose a complete gradient and accent palette. Your selection is saved automatically.</p><div class="swatches">'+th+'</div><h3 style="margin-top:22px">Create a custom theme</h3><div class="toolbar"><input class="field" id="custom-theme-name" placeholder="Theme name" maxlength="24"><input type="color" id="custom-theme-color" value="#b14bff" title="Accent color"><button class="btn ghost" data-act="save-custom-theme">Save palette</button></div></div><div class="glass"><div class="split"><div class="grow"><h3>Wallpaper collection</h3><p>Eight original Nyxen wallpapers, bundled for offline use.</p></div><button class="chip '+(!S.settings.wallpaper?'on':'')+'" data-act="wallpaper" data-i="0">No wallpaper</button></div><div class="wallpaper-grid">'+wallpapers+'</div></div></div>';
+  }
+  if (key === 'fonts') return '<div class="page">'+header('Fonts','Set the typeface used throughout the desktop player.')+'<div class="glass"><h3>Current font</h3><p>'+esc(S.settings.customFontName||'System default')+'</p><div class="toolbar"><button class="btn" data-act="import-font">Import .TTF / .OTF font</button><button class="btn ghost" data-act="reset-font">Use system font</button></div><p class="sub">The font file is copied into Nyxen’s local app data, so the setting remains available after restarting.</p></div></div>';
+  if (key === 'playback') return '<div class="page">'+header('Playback','Control how Nyxen starts and continues playing music.')+'<div class="glass">'+toggle('autoResume','Resume playback on launch','Continue playing automatically when Nyxen opens.')+toggle('rememberQueue','Save playback queue','Restore the same songs and playback position next time.')+toggle('autoplaySimilar','Auto-play similar tracks','Continue with an unqueued artist or genre match when the queue ends.')+toggle('keepAwake','Keep display awake','Prevent the display from sleeping while music is playing.')+'<div class="setting-row"><div><b>Playback speed</b><small>Adjust the playback rate from 0.5× to 2×.</small></div><select id="speed" class="field compact">'+[0.5,0.75,0.9,1,1.1,1.25,1.5,1.75,2].map(v=>'<option value="'+v+'" '+(Number(S.settings.speed||1)===v?'selected':'')+'>'+v+'×</option>').join('')+'</select></div></div><div class="glass"><h3>Interface behavior</h3>'+toggle('buttonSounds','Button sounds','Play a subtle UI sound when supported.')+'</div></div>';
+  if (key === 'sleep') return '<div class="page">'+header('Sleep timer','Set a timer to stop playback automatically.')+'<div class="glass"><h3>Timer duration</h3><p>Choose how long Nyxen should continue playing.</p><div class="toolbar">'+[0,15,30,45,60].map(m=>'<button class="chip '+(sleepMin===m?'on':'')+'" data-act="sleep" data-m="'+m+'">'+(m?m+' min':'Off')+'</button>').join('')+'<button class="chip '+(sleepTrack?'on':'')+'" data-act="sleep-track">End of track</button></div><p class="sub">'+(sleepMin?'Timer active · '+Math.max(0,Math.ceil((sleepEnd-Date.now())/60000))+' minutes remaining':sleepTrack?'Will stop at the end of this track':'No timer is active')+'</p></div><div class="glass"><h3>Fade out</h3>'+toggle('sleepFade','Fade out before stopping','Gradually lower the volume during the final 20 seconds of the sleep timer.')+'</div></div>';
+  if (key === 'shortcuts') return '<div class="page">'+header('Keyboard shortcuts','Use these shortcuts while the Nyxen window is active.')+'<div class="glass"><div class="shortcut-row"><kbd>Space</kbd><span>Play or pause</span></div><div class="shortcut-row"><kbd>← / →</kbd><span>Seek backward or forward 5 seconds</span></div><div class="shortcut-row"><kbd>Ctrl + ← / →</kbd><span>Previous or next song</span></div><div class="shortcut-row"><kbd>↑ / ↓</kbd><span>Increase or decrease volume</span></div><div class="shortcut-row"><kbd>M</kbd><span>Mute or unmute</span></div><div class="shortcut-row"><kbd>Media keys</kbd><span>Play/pause, next, previous and stop</span></div></div></div>';
+  if (key === 'about') return '<div class="page">'+header('About NyxenPlayer','A local-first music player.')+'<div class="glass"><h3>NyxenPlayer</h3><p>'+esc(ABOUT)+'</p></div></div>';
+  return '<div class="page">'+header('Settings','Choose a settings section.')+'</div>';
 }
 const PAGES = { home: pageHome, library: pageLibrary, videos: pageVideos, search: pageSearch, playlists: pagePlaylists, playlist: pagePlaylist, studio: pageStudio, stats: pageStats, settings: pageSettings };
 const NAV = [['home', 'Home', 'home'], ['library', 'Library', 'lib'], ['videos', 'Videos', 'play'], ['search', 'Search', 'search'], ['playlists', 'Playlists', 'list'], ['studio', 'Audio Studio', 'eq'], ['stats', 'Stats', 'chart'], ['settings', 'Settings', 'gear']];
@@ -804,10 +816,11 @@ function applyCustomFont() {
   document.documentElement.style.setProperty('--custom-font','NyxenCustom');
 }
 function applyWallpaper() {
-  const n = Number(S.settings.wallpaper || 0), bg = $('#bg');
+  const n = clamp(Math.floor(Number(S.settings.wallpaper) || 0), 0, 8), bg = $('#bg');
   if (!bg) return;
-  bg.style.backgroundImage = n ? `linear-gradient(90deg,rgba(0,0,0,.72),rgba(0,0,0,.62)),url('../resources/offline/wallpapers/nyxen_wallpaper_${String(n).padStart(2,'0')}.png')` : '';
-  bg.style.backgroundSize = n ? 'cover' : ''; bg.style.backgroundPosition = 'center';
+  const image = n ? `url("nyxen://wallpaper/nyxen_wallpaper_${String(n).padStart(2,'0')}.png")` : 'none';
+  bg.style.backgroundImage = n ? `linear-gradient(90deg,rgba(0,0,0,.68),rgba(0,0,0,.58)),${image}` : '';
+  bg.style.backgroundSize = n ? 'cover' : ''; bg.style.backgroundPosition = 'center'; bg.style.backgroundRepeat = 'no-repeat';
 }
 function editTrack(t) {
   if(!t) return;
@@ -850,6 +863,7 @@ function closeOverlays() { $('#np').classList.add('off'); $('#queue').classList.
 /* ================= actions (click delegation) ================= */
 const ACT = {
   nav: (d) => go(d.page),
+  'settings-page': (d) => { V.arg = d.key || 'overview'; render(); },
   play: (d) => { const l = CTX.get(+d.ctx); if (l) playIds(l, +d.i); },
   menu: (d, e) => { const t = track(d.id); if (!t) return; const m = $('#menu'); m.dataset.id = d.id; m.innerHTML = `<button data-m="next">Play next</button><button data-m="queue">Add to queue</button><button data-m="fav">${t.fav ? 'Remove from favorites' : 'Add to favorites'}</button><button data-m="pl">Add to playlist...</button><button data-m="edit">Edit song info</button><button data-m="lyrics">Add / edit lyrics</button><button data-m="rm">Remove from library</button>`; m.classList.remove('hidden'); m.style.left = Math.min(e.clientX, innerWidth - 230) + 'px'; m.style.top = Math.min(e.clientY, innerHeight - 260) + 'px'; },
   group: (d) => { V.group = { cat: S.settings.cat, name: d.name }; render(); },
@@ -914,9 +928,9 @@ const ACT = {
   'eq-preset': (d) => { S.settings.preset = d.n; S.settings.gains = EQ_PRESETS[d.n].slice(); applyFx(); save(); render(); },
   rv: (d) => { S.settings.rvPreset = +d.i; setReverb(); applyFx(); save(); render(); },
   'eq-reset': () => { Object.assign(S.settings, { gains: Array(10).fill(0), pre: 0, bass: 0, preset: 'Flat', rvPreset: 0, rvMix: 0.3, eqOn: true }); setReverb(); applyFx(); save(); render(); },
-  theme: (d) => { S.settings.theme = +d.i; applyTheme(); save(); render(); },
+  theme: (d) => { const index = Number(d.i); if (!Number.isInteger(index) || !THEMES[index]) return; S.settings.theme = index; applyTheme(); save(); render(); },
   'cover-toggle': () => { S.settings.cover = !S.settings.cover; applyCoverAccent(); save(); render(); },
-  wallpaper: (d) => { S.settings.wallpaper = +d.i; applyWallpaper(); save(); render(); },
+  wallpaper: (d) => { const index = Number(d.i); if (!Number.isInteger(index) || index < 0 || index > 8) return; S.settings.wallpaper = index; applyWallpaper(); save(); render(); },
   'save-custom-theme': () => {
     const name=$('#custom-theme-name')?.value.trim(), accent=$('#custom-theme-color')?.value;
     if(!name||!accent){toast('Enter a theme name and accent color');return;}
