@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('nyxen', {
 
   // Google account authentication
   googleSignIn: () => ipcRenderer.invoke('google:sign-in'),
+  emailAuth: (credentials) => ipcRenderer.invoke('email:auth', credentials),
 
   // External links
   openExternal: (u) =>

@@ -622,6 +622,51 @@ ipcMain.handle('open-external', async (_e, value) => {
   }
 });
 
+// Firebase Authentication REST API. The API key is public app configuration, not a service-account credential.
+const FIREBASE_WEB_API_KEY = 'AIzaSyBfYKwEhCVmlqc_-RiEhbVvvmp-AbpoNz';
+
+async function firebaseAuthRequest(endpoint, payload) {
+  const response = await fetch('https://identitytoolkit.googleapis.com/v1/' + endpoint + '?key=' + FIREBASE_WEB_API_KEY, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const code = data && data.error && data.error.message ? data.error.message : '';
+    const message = code.includes('EMAIL_NOT_FOUND') ? "This email isn't registered with Nyxen. Please create an account first."
+      : code.includes('EMAIL_EXISTS') ? 'An account with this email already exists. Sign in instead.'
+      : code.includes('WEAK_PASSWORD') ? 'Choose a password with at least 6 characters.'
+      : code.includes('INVALID_PASSWORD') || code.includes('INVALID_LOGIN_CREDENTIALS') ? 'Incorrect email or password.'
+      : code.includes('INVALID_EMAIL') ? 'Enter a valid email address.'
+      : code.includes('OPERATION_NOT_ALLOWED') ? 'This sign-in method is not enabled in Firebase.'
+      : 'Firebase authentication failed. Please check your details and try again.';
+    throw new Error(message);
+  }
+  return data;
+}
+
+async function firebaseEmailAuth(input) {
+  const email = String(input && input.email || '').trim();
+  const password = String(input && input.password || '');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Enter a valid email address.');
+  const createAccount = !!(input && input.createAccount);
+  if (password.length < 6) throw new Error('Password must be at least 6 characters.');
+  if (createAccount) {
+    const created = await firebaseAuthRequest('accounts:signUp', { email, password, returnSecureToken: true });
+    await firebaseAuthRequest('accounts:sendOobCode', { requestType: 'VERIFY_EMAIL', idToken: created.idToken });
+    return { ok: true, pendingVerification: true, email };
+  }
+  const user = await firebaseAuthRequest('accounts:signInWithPassword', { email, password, returnSecureToken: true });
+  if (user.emailVerified !== true) {
+    await firebaseAuthRequest('accounts:sendOobCode', { requestType: 'VERIFY_EMAIL', idToken: user.idToken }).catch(() => {});
+    throw new Error('Please verify your email first. We sent a verification link to your inbox.');
+  }
+  return { ok: true, profile: { sub: String(user.localId), name: String(user.displayName || user.email).slice(0, 120), email: String(user.email).slice(0, 254), picture: '' } };
+}
+
+ipcMain.handle('email:auth', async (_event, input) => {
+  try { return await firebaseEmailAuth(input || {}); }
+  catch (error) { return { ok: false, error: error && error.message ? error.message : 'Authentication failed.' }; }
+});
 // GOOGLE SIGN-IN (desktop OAuth 2.0 authorization-code flow with PKCE)
 const GOOGLE_DESKTOP_CLIENT_ID = '936657455185-28l7q0jf6nkh4m44fv5jjmah6qi0a3gk.apps.googleusercontent.com';
 
@@ -704,11 +749,30 @@ async function googleOAuthSignIn() {
         if (!profileResponse.ok || !profile.sub || !profile.email || profile.email_verified !== true) {
           throw new Error('Google did not return a verified account profile.');
         }
+        if (!tokens.id_token) {
+          throw new Error('Google did not return an identity token. Please try again.');
+        }
+        const gateResponse = await fetch('https://nyxen-player-hoejp1qo9-nyxen-team.vercel.app/api/google-sign-in', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken: tokens.id_token })
+        });
+        const gate = await gateResponse.json().catch(() => ({}));
+        if (!gateResponse.ok || !gate.customToken) {
+          throw new Error(gate.error || 'This Google account could not be verified with Nyxen.');
+        }
+        const firebaseUser = await firebaseAuthRequest('accounts:signInWithCustomToken', {
+          token: gate.customToken,
+          returnSecureToken: true
+        });
+        if (!firebaseUser.localId || !firebaseUser.email || firebaseUser.emailVerified !== true) {
+          throw new Error('Firebase could not verify this Google account.');
+        }
         finish(null, {
-          sub: String(profile.sub),
-          name: String(profile.name || profile.email).slice(0, 120),
-          email: String(profile.email).slice(0, 254),
-          picture: typeof profile.picture === 'string' && profile.picture.startsWith('https://') ? profile.picture : ''
+          sub: String(firebaseUser.localId),
+          name: String(firebaseUser.displayName || profile.name || firebaseUser.email).slice(0, 120),
+          email: String(firebaseUser.email).slice(0, 254),
+          picture: typeof firebaseUser.photoUrl === 'string' && firebaseUser.photoUrl.startsWith('https://') ? firebaseUser.photoUrl : ''
         });
       } catch (error) {
         finish(new Error(error && error.message ? error.message : 'Google sign-in failed.'));
