@@ -588,7 +588,7 @@ function updatePlayerUI() {
 function renderQueue() {
   const q = $('#queue'); if (q.classList.contains('off')) return;
   q.innerHTML = `<div class="split"><h2 class="grow" style="margin:0">Queue</h2><button class="icon" data-act="queue-toggle">${svg('close', 22)}</button></div><div class="sub" style="margin-bottom:10px">${Q.ids.length} songs &middot; ${MODE_NAME[S.settings.mode]}</div>` +
-    Q.ids.map((id, i) => { const t = track(id); return t ? `<div class="trow ${i === Q.i ? 'cur' : ''}" data-act="q-jump" data-i="${i}">${art(t, 'sm')}<div class="tmeta"><b>${esc(t.title)}</b><span>${esc(t.artist)}</span></div><button class="icon" data-act="q-rm" data-i="${i}">${svg('close', 18)}</button></div>` : ''; }).join('');
+    Q.ids.map((id, i) => { const t = track(id); return t ? `<div class="trow ${i === Q.i ? 'cur' : ''}" data-act="q-jump" data-id="${t.id}" data-i="${i}">${art(t, 'sm')}<div class="tmeta"><b>${esc(t.title)}</b><span>${esc(t.artist)}</span></div><button class="icon" data-act="q-rm" data-i="${i}">${svg('close', 18)}</button></div>` : ''; }).join('');
 }
 let idle = 0, vizAccent = '#b14bff', vizAccentT = 0; const vdata = new Uint8Array(256);
 function vizLoop() {
@@ -728,7 +728,7 @@ function updateVideoAudioButton() {
   const button = $('#video-audio-track');
   if (!button) return;
   const tracks = getVideoAudioTracks();
-  button.disabled = !tracks || tracks.length < 2;
+  button.disabled = false;
   button.title = !tracks ? 'Audio track selection is not supported by this video runtime' : tracks.length < 2 ? 'No alternate audio tracks detected' : 'Choose audio track';
   button.textContent = tracks && tracks.length > 1 ? 'Audio · ' + (tracks.findIndex(t => t.enabled) + 1) : 'Audio';
 }
