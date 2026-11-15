@@ -752,7 +752,7 @@ async function googleOAuthSignIn() {
         if (!tokens.id_token) {
           throw new Error('Google did not return an identity token. Please try again.');
         }
-        const gateResponse = await fetch('https://us-central1-nyxenplayer.cloudfunctions.net/googleSignInForExistingUser', {
+        const gateResponse = await fetch('https://nyxen-player.vercel.app/api/google-sign-in', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ idToken: tokens.id_token })
