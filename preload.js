@@ -33,9 +33,17 @@ contextBridge.exposeInMainWorld('nyxen', {
     ipcRenderer.invoke('open-external', u),
 
   // Events
-  onScanProgress: (cb) =>
-    ipcRenderer.on('scan:progress', (_e, p) => cb(p)),
+  onScanProgress: (cb) => {
+    if (typeof cb !== 'function') return () => {};
+    const listener = (_e, progress) => cb(progress);
+    ipcRenderer.on('scan:progress', listener);
+    return () => ipcRenderer.removeListener('scan:progress', listener);
+  },
 
-  onCommand: (cb) =>
-    ipcRenderer.on('cmd', (_e, c) => cb(c))
+  onCommand: (cb) => {
+    if (typeof cb !== 'function') return () => {};
+    const listener = (_e, command) => cb(command);
+    ipcRenderer.on('cmd', listener);
+    return () => ipcRenderer.removeListener('cmd', listener);
+  }
 });
