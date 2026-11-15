@@ -83,6 +83,8 @@ const DEFAULT = () => ({
 function normalizeState(saved) {
   const d = DEFAULT();
   if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return d;
+  const source = { ...saved };
+  delete source.googleAccount;
   const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
   const baseName = (value) => { const p = String(value || ''); return p.slice(Math.max(p.lastIndexOf('/'), p.lastIndexOf(String.fromCharCode(92))) + 1); };
   const finite = (value, fallback, min = -Infinity, max = Infinity) => {
@@ -152,15 +154,15 @@ function normalizeState(saved) {
   }
   return {
     ...d,
-    ...saved,
+    ...source,
     profile: {
       name: typeof saved.profile?.name === 'string' ? saved.profile.name : '',
       email: typeof saved.profile?.email === 'string' ? saved.profile.email : ''
     },
-    account: isObject(saved.account || saved.googleAccount) && typeof (saved.account || saved.googleAccount).sub === 'string' ? {
-      sub: (saved.account || saved.googleAccount).sub.slice(0, 160),
-      name: typeof (saved.account || saved.googleAccount).name === 'string' ? (saved.account || saved.googleAccount).name.slice(0, 120) : '',
-      email: typeof (saved.account || saved.googleAccount).email === 'string' ? (saved.account || saved.googleAccount).email.slice(0, 254) : '',
+    account: isObject(saved.account) && typeof saved.account.sub === 'string' ? {
+      sub: saved.account.sub.slice(0, 160),
+      name: typeof saved.account.name === 'string' ? saved.account.name.slice(0, 120) : '',
+      email: typeof saved.account.email === 'string' ? saved.account.email.slice(0, 254) : '',
       picture: ''
     } : null,
     tracks,
