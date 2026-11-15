@@ -486,6 +486,7 @@ ipcMain.handle('wipe', async () => {
   try {
     await stateWriteChain.catch(() => {});
     if (keepAwakeId !== null) { powerSaveBlocker.stop(keepAwakeId); keepAwakeId = null; }
+    allowedMediaPaths.clear();
     await fsp.rm(stateFile(), { force: true });
     await fsp.rm(stateFile() + '.tmp', { force: true });
     await fsp.rm(coverDir(), { recursive: true, force: true });
