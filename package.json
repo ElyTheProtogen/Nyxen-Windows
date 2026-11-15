@@ -54,6 +54,18 @@
       "allowToChangeInstallationDirectory": true,
       "perMachine": false,
       "shortcutName": "NyxenPlayer"
-    }
+    },
+    "fileAssociations": [
+      {
+        "ext": [
+          "mp4",
+          "m4v"
+        ],
+        "name": "MP4 Video",
+        "description": "MP4 video file",
+        "role": "Viewer",
+        "mimeType": "video/mp4"
+      }
+    ]
   }
 }
