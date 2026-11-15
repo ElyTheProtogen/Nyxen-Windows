@@ -5,7 +5,6 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmt = (sec) => { sec = Math.max(0, Math.floor(sec || 0)); return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'); };
 const playsText = (n) => (n <= 0 ? 'Not played yet' : n === 1 ? 'Played 1 time' : `Played ${n} times`);
-const isEmail = (value) => { const email = (value || '').trim(); return !email || (email.includes('@') && email.lastIndexOf('.') > email.indexOf('@') + 1 && !/\s/.test(email)); };
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const b64url = (s) => btoa(String.fromCharCode(...new TextEncoder().encode(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const fileUrl = (p) => 'nyxen://file/' + b64url(p);
