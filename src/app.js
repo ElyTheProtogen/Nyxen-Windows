@@ -696,7 +696,7 @@ function choosePlaylistFolder(playlistId) {
   const modal = $('#modal');
   modal.innerHTML = `<div class="dialog"><h2>Move playlist</h2><div class="sub">Choose a folder for “${esc(playlist.name)}”.</div><div class="folder-choices">${choices.map((folder) => `<button class="trow" type="button" data-folder-choice="${folder.id}"><div class="tmeta"><b>${esc(folder.name)}</b><span>${folder.id ? 'Playlist folder' : 'Not in a folder'}</span></div><span class="folder-choice-mark">${playlist.folderId === folder.id ? '✓' : ''}</span></button>`).join('')}</div><div class="actions"><button class="btn ghost" id="folder-cancel">Cancel</button></div></div>`;
   modal.classList.remove('hidden');
-  $('[data-folder-choice]', modal).forEach((button) => button.addEventListener('click', () => {
+  $$('[data-folder-choice]', modal).forEach((button) => button.addEventListener('click', () => {
     playlist.folderId = button.dataset.folderChoice || '';
     save(); closeModal(); render();
     const folder = S.playlistFolders.find((item) => item.id === playlist.folderId);
@@ -1232,7 +1232,7 @@ document.addEventListener('contextmenu', (e) => {
 });
 let queueDragIndex = null;
 function clearQueueDrag() {
-  $('#queue .queue-item').forEach((row) => row.classList.remove('dragging', 'drag-over'));
+  $$('#queue .queue-item').forEach((row) => row.classList.remove('dragging', 'drag-over'));
   queueDragIndex = null;
 }
 document.addEventListener('dragstart', (e) => {
@@ -1247,7 +1247,7 @@ document.addEventListener('dragover', (e) => {
   if (queueDragIndex === null || !row) return;
   e.preventDefault();
   if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-  $('#queue .queue-item.drag-over').forEach((item) => item.classList.remove('drag-over'));
+  $$('#queue .queue-item.drag-over').forEach((item) => item.classList.remove('drag-over'));
   row.classList.add('drag-over');
 });
 document.addEventListener('drop', (e) => {
