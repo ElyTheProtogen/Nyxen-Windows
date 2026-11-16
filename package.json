@@ -9,7 +9,8 @@
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder --win --publish never",
-    "check": "node --check main.js && node --check preload.js && node --check src/app.js"
+    "check": "node --check main.js && node --check preload.js && node --check src/queue-utils.js && node --check src/app.js",
+    "test": "node --test"
   },
   "dependencies": {
     "music-metadata": "^10.0.0"
