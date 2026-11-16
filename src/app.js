@@ -1266,6 +1266,7 @@ document.addEventListener('click', (e) => {
   const mb = e.target.closest('#menu [data-m]');
   if (mb) { const id = $('#menu').dataset.id; $('#menu').classList.add('hidden'); MENU[mb.dataset.m](id); return; }
   if (!e.target.closest('#menu')) { $('#menu').classList.add('hidden'); delete $('#menu').dataset.contextMenu; }
+  if (e.target.closest('#queue .queue-grip')) return;
   const el = e.target.closest('[data-act]');
   if (el && ACT[el.dataset.act]) ACT[el.dataset.act](el.dataset, e);
 });
