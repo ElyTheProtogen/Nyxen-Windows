@@ -2,6 +2,8 @@
 
 This is a product backlog, not a claim that every item is implemented. The first implementation wave is tracked separately in the current pull request. Items should be delivered in tested, user-visible batches; avoid shipping placeholder toggles or duplicating existing behavior.
 
+**Implementation note:** The current duplicate finder groups normalized title + artist matches for review; exact file-hash detection (item 1) remains open.
+
 ## 1. Library intelligence
 1. Duplicate-track detection by file hash.
 2. Near-duplicate detection by title, artist and duration.
@@ -12,10 +14,10 @@ This is a product backlog, not a claim that every item is implemented. The first
 7. Metadata completeness report.
 8. Detect conflicting metadata tags.
 9. Bulk metadata editor.
-10. Multi-select track operations.
-11. Batch favorite and unfavorite.
-12. Batch add to playlist.
-13. Batch remove from library.
+10. [x] Multi-select track operations.
+11. [x] Batch favorite and unfavorite.
+12. [x] Batch add to playlist.
+13. [x] Batch remove from library.
 14. Batch genre assignment.
 15. Batch album-artist correction.
 16. Sort by file size.
@@ -25,7 +27,7 @@ This is a product backlog, not a claim that every item is implemented. The first
 20. Filter by folder location.
 
 ## 2. Search and discovery
-21. Search by filename.
+21. [x] Search by filename.
 22. Search by composer.
 23. Search by album artist.
 24. Search by year.
@@ -33,14 +35,14 @@ This is a product backlog, not a claim that every item is implemented. The first
 26. Search by file format.
 27. Search by duration range.
 28. Search by bitrate range.
-29. Search by folder path.
+29. [x] Search by folder path.
 30. Search within current playlist.
 31. Search within current album.
 32. Search within current artist.
 33. Search within queue.
-34. Search with quoted exact phrases.
-35. Search with negative terms.
-36. Search with field prefixes.
+34. [x] Search with quoted exact phrases.
+35. [x] Search with negative terms.
+36. [x] Search with field prefixes.
 37. Search suggestions while typing.
 38. Search result highlighting.
 39. Search history management.
@@ -48,7 +50,7 @@ This is a product backlog, not a claim that every item is implemented. The first
 
 ## 3. Playlists and queue
 41. Smart playlists with custom rules.
-42. Playlist folders.
+42. [x] Playlist folders.
 43. Nested playlist groups.
 44. Playlist cover customization.
 45. Playlist descriptions.
@@ -62,7 +64,7 @@ This is a product backlog, not a claim that every item is implemented. The first
 53. Queue save as playlist.
 54. Queue load from playlist.
 55. Queue clear confirmation.
-56. Queue drag-and-drop reorder.
+56. [x] Queue drag-and-drop reorder.
 57. Queue search.
 58. Queue deduplication.
 59. Queue history.
