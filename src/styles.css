@@ -283,3 +283,22 @@ h2 { letter-spacing: -.025em; }
 .wallpaper-grid .wallpaper{min-height:116px;}
 .wallpaper-grid .wallpaper img{transition:transform .35s ease,opacity .2s ease;}
 .wallpaper-grid .wallpaper:hover img{transform:scale(1.045);opacity:1;}
+
+/* Queue reordering */
+.queue-hint { margin: 4px 0 12px; }
+.queue-item { gap: 8px; }
+.queue-grip { flex: none; padding: 7px 2px; color: var(--text-muted); cursor: grab; font-size: 18px; line-height: 1; user-select: none; }
+.queue-grip:active { cursor: grabbing; }
+.queue-item.dragging { opacity: .38; }
+.queue-item.drag-over { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent), 0 8px 22px rgba(0,0,0,.2); }
+.queue-move { width: 28px; height: 32px; font-size: 16px; }
+.queue-move:disabled { opacity: .24; cursor: default; }
+.queue-item img { -webkit-user-drag: none; }
+
+/* Playlist folders */
+.playlist-folder { margin-top: 16px; }
+.playlist-folder-heading { padding: 4px 2px 8px; }
+.playlist-folder-heading h2 { margin: 0; }
+.folder-empty { padding: 10px 4px 14px; }
+.folder-choices { display: grid; gap: 7px; margin-top: 16px; }
+.folder-choice-mark { width: 26px; text-align: center; color: var(--accent); font-weight: 800; }
