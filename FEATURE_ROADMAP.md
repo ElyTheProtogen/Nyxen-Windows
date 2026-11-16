@@ -1,6 +1,6 @@
 # Nyxen Player — 200-feature expansion roadmap
 
-This is a product backlog, not a claim that every item is implemented. The first implementation wave is tracked separately in the current pull request. Items should be delivered in tested, user-visible batches; avoid shipping placeholder toggles or duplicating existing behavior.
+This is a product backlog, not a claim that every item is implemented. Wave 1 (PR #11) and the initial Wave 2 batch (PR #12) are merged; shipped items are marked [x]. Items should be delivered in tested, user-visible batches; avoid shipping placeholder toggles or duplicating existing behavior.
 
 **Implementation note:** The current duplicate finder groups normalized title + artist matches for review; exact file-hash detection (item 1) remains open.
 
