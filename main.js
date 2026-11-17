@@ -472,6 +472,7 @@ ipcMain.handle('state:save', async (_e, data) => {
   });
   stateWriteChain = write;
   await write;
+  rememberStateMedia(data);
   return true;
 });
 
