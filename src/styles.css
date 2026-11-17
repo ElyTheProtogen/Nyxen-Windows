@@ -302,3 +302,11 @@ h2 { letter-spacing: -.025em; }
 .folder-empty { padding: 10px 4px 14px; }
 .folder-choices { display: grid; gap: 7px; margin-top: 16px; }
 .folder-choice-mark { width: 26px; text-align: center; color: var(--accent); font-weight: 800; }
+
+/* Exact duplicate review */
+.duplicate-panel { margin-top: 16px; }
+.duplicate-panel > p { max-width: 760px; }
+.duplicate-group { margin-top: 14px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.025); }
+.duplicate-group > .split { align-items: center; margin-bottom: 8px; }
+.duplicate-path { max-width: 28%; overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.duplicate-error { color: #ff9b9b; }
