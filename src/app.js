@@ -403,7 +403,7 @@ async function applyCoverAccent() {
 }
 
 /* ================= UI helpers ================= */
-const V = { page: 'home', arg: null, group: null, q: '', sf: 'all', selected: [] };
+const V = { page: 'home', arg: null, group: null, q: '', sf: 'all', selected: [], hashDuplicateGroups: null, hashScanSummary: null, hashScanBusy: false, hashScanProgress: null, hashScanError: '' };
 let ctn = 0; const CTX = new Map();
 const reg = (list) => { const k = ++ctn; CTX.set(k, list); if (CTX.size > 40) CTX.delete(CTX.keys().next().value); return k; };
 const ids = (list) => list.map((t) => t.id);
@@ -469,15 +469,39 @@ function pageLibrary() {
   h += `<div class="toolbar">${cats.map(([k, n]) => `<button class="chip ${cat === k ? 'on' : ''}" data-act="cat" data-cat="${k}">${n}</button>`).join('')}`;
   if (cat === 'tracks' && !V.group) h += `<span class="grow"></span><select id="sortsel">${Object.entries(SORTS).map(([k, n]) => `<option value="${k}" ${S.settings.sort === k ? 'selected' : ''}>${n}</option>`).join('')}</select><button class="icon" data-act="sort-dir" title="Sort direction">${S.settings.asc ? '&#9650;' : '&#9660;'}</button><button class="btn ghost" data-act="shuffle-all">${svg('shuffle', 18)} Shuffle all</button>`;
   if (['tracks','favorites','duplicates'].includes(cat)) h += `<span class="sub">${V.selected.length} selected</span>${V.selected.length ? `<button class="chip" data-act="bulk-fav">Toggle favorites</button><button class="chip" data-act="bulk-pl">Add to playlist</button><button class="chip" data-act="bulk-rm">Remove selected</button><button class="chip" data-act="clear-sel">Clear</button>` : ''}`;
+  if (cat === 'duplicates') h += `<button class="btn ghost" data-act="scan-exact-duplicates" ${V.hashScanBusy ? 'disabled' : ''}>${V.hashScanBusy ? 'Scanning…' : 'Scan exact file duplicates'}</button>`;
   h += '</div>';
   if (!S.tracks.length) return h + emptyState('Your library is empty', 'Add a folder with your music to get started.', 'Import a folder', 'import-folder') + '</div>';
   if (V.group) {
     const ts = groupTracks(), k = reg(ids(ts));
     return h + `<div class="split" style="margin:12px 0"><button class="chip" data-act="back">&larr; Back</button><div class="grow"><h2 style="margin:0">${esc(V.group.name)}</h2><div class="sub">${ts.length} songs</div></div><button class="btn" data-act="play-group">${svg('play', 18)} Play</button><button class="btn ghost" data-act="shuffle-group">${svg('shuffle', 18)} Shuffle</button></div>${ts.map((t, i) => trow(t, k, i)).join('')}</div>`;
   }
-  if (cat === 'tracks' || cat === 'favorites' || cat === 'duplicates') {
-    const ts = cat === 'tracks' ? sortTracks(S.tracks) : cat === 'favorites' ? sortTracks(S.tracks.filter(t=>t.fav)) : sortTracks(duplicateTracks()); const k = reg(ids(ts));
-    return h + (ts.length ? ts.map((t, i) => trow(t, k, i, `<button class="icon ${V.selected.includes(t.id) ? 'on' : ''}" data-act="select-track" data-id="${t.id}" title="Select">${V.selected.includes(t.id) ? '✓' : '＋'}</button>`)).join('') : emptyState(cat === 'duplicates' ? 'No duplicates found' : 'No tracks here yet', cat === 'duplicates' ? 'Matching title and artist appear here. Original files are never deleted automatically.' : 'Add music or change your filters.')) + '</div>';
+  if (cat === 'duplicates') {
+    const exactGroups = (V.hashDuplicateGroups || []).map((group) => ({ ...group, tracks: group.ids.map(track).filter(Boolean) })).filter((group) => group.tracks.length > 1);
+    const exactCount = exactGroups.reduce((sum, group) => sum + group.tracks.length, 0);
+    const status = V.hashScanBusy
+      ? (V.hashScanProgress && V.hashScanProgress.total ? `Hashing ${V.hashScanProgress.done} of ${V.hashScanProgress.total} candidate files…` : 'Preparing your library for a safe scan…')
+      : V.hashScanSummary
+        ? `${exactGroups.length} exact groups · ${exactCount} matching tracks · ${V.hashScanSummary.checkedFiles} files hashed · ${V.hashScanSummary.unavailableFiles} unavailable`
+        : 'Exact matching compares SHA-256 file contents. Original files are only read, never changed.';
+    const exactHtml = V.hashDuplicateGroups === null
+      ? '<div class="sub">Run a scan to find byte-identical audio files, even when their names or tags differ.</div>'
+      : exactGroups.length
+        ? exactGroups.map((group, index) => {
+            const ctx = reg(ids(group.tracks));
+            return `<section class="duplicate-group"><div class="split"><b>Exact match ${index + 1}</b><span class="sub">${formatFileSize(group.size)} · ${group.tracks.length} files</span></div>${group.tracks.map((t, i) => trow(t, ctx, i, `<button class="icon ${V.selected.includes(t.id) ? 'on' : ''}" data-act="select-track" data-id="${t.id}" title="Select">${V.selected.includes(t.id) ? '✓' : '＋'}</button><span class="duplicate-path" title="${esc(t.path)}">${esc(t.path.split(/[\\/]/).pop())}</span>`)).join('')}</section>`;
+          }).join('')
+        : '<div class="sub">No byte-identical files were found in the available same-size candidates.</div>';
+    const metadataMatches = sortTracks(duplicateTracks());
+    const metadataCtx = reg(ids(metadataMatches));
+    const metadataHtml = metadataMatches.length
+      ? metadataMatches.map((t, i) => trow(t, metadataCtx, i, `<button class="icon ${V.selected.includes(t.id) ? 'on' : ''}" data-act="select-track" data-id="${t.id}" title="Select">${V.selected.includes(t.id) ? '✓' : '＋'}</button>`)).join('')
+      : '<div class="sub">No normalized title + artist matches found.</div>';
+    return h + `<section class="glass duplicate-panel"><div class="split"><div class="grow"><h2>Exact file duplicates</h2><p>SHA-256 checks identify identical file contents, regardless of filename or metadata. Files with unique sizes are skipped because they cannot be byte-identical.</p></div></div><div class="sub" id="hash-scan-status">${esc(status)}</div>${V.hashScanError ? `<p class="duplicate-error">${esc(V.hashScanError)}</p>` : ''}${exactHtml}</section><section class="duplicate-panel"><h2>Possible metadata duplicates</h2><p class="sub">These tracks share a normalized title and artist. They may be different recordings or encodings; review before removing anything.</p>${metadataHtml}</section></div>`;
+  }
+  if (cat === 'tracks' || cat === 'favorites') {
+    const ts = cat === 'tracks' ? sortTracks(S.tracks) : sortTracks(S.tracks.filter(t=>t.fav)); const k = reg(ids(ts));
+    return h + (ts.length ? ts.map((t, i) => trow(t, k, i, `<button class="icon ${V.selected.includes(t.id) ? 'on' : ''}" data-act="select-track" data-id="${t.id}" title="Select">${V.selected.includes(t.id) ? '✓' : '＋'}</button>`)).join('') : emptyState('No tracks here yet', 'Add music or change your filters.')) + '</div>';
   }
   const field = { albums: 'album', artists: 'artist', genres: 'genre' }[cat]; const map = new Map();
   S.tracks.forEach((t) => { if (!map.has(t[field])) map.set(t[field], []); map.get(t[field]).push(t); });
@@ -495,6 +519,20 @@ function duplicateTracks() {
   const key = t => [t.title,t.artist].map(x=>String(x||'').toLowerCase().replace(/\\.[^.]+$/,'').replace(/[^a-z0-9]+/g,' ').trim()).join('|');
   const counts=new Map(); S.tracks.forEach(t=>counts.set(key(t),(counts.get(key(t))||0)+1));
   return S.tracks.filter(t=>counts.get(key(t))>1);
+}
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes < 0) return 'Unknown size';
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let value = bytes / 1024, unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+  return `${value.toFixed(value >= 100 ? 0 : value >= 10 ? 1 : 2)} ${units[unit]}`;
+}
+function invalidateDuplicateScan() {
+  V.hashDuplicateGroups = null;
+  V.hashScanSummary = null;
+  V.hashScanProgress = null;
+  V.hashScanError = '';
 }
 function searchResults() {
   const q = (V.q || '').trim().toLowerCase();
@@ -740,6 +778,7 @@ async function importTargets(targets, folders, silent) {
   try {
     const r = await window.nyxen.scan(targets, S.tracks.map((t) => t.id));
     r.added.forEach((t) => S.tracks.push(t));
+    if (r.added.length) invalidateDuplicateScan();
     folders.forEach((f) => { if (!S.folders.includes(f)) S.folders.push(f); });
     S.lastScan = Date.now(); reindex(); save();
     if (!silent) { if (r.added.length) toast(`Added ${r.added.length} new songs`); else toast('No new songs found'); }
@@ -869,6 +908,7 @@ function enqueue(id, afterCurrent) {
 }
 function removeTrack(id) {
   S.tracks = S.tracks.filter((t) => t.id !== id);
+  invalidateDuplicateScan();
   S.playlists.forEach((p) => { p.ids = p.ids.filter((x) => x !== id); });
   const wasCur = !!(cur && cur.id === id);
   const removedBeforeCurrent = Q.ids.slice(0, Math.max(0, Q.i)).filter((queuedId) => queuedId === id).length;
@@ -973,6 +1013,24 @@ const ACT = {
   'play-group': () => playIds(ids(groupTracks()), 0),
   'shuffle-group': () => { const l = ids(groupTracks()); if (l.length) { setMode('shuffle'); playIds(l, Math.floor(Math.random() * l.length)); } },
   cat: (d) => { S.settings.cat = d.cat; V.group = null; save(); render(); },
+  'scan-exact-duplicates': async () => {
+    if (V.hashScanBusy) return;
+    V.hashScanBusy = true; V.hashScanProgress = { done: 0, total: 0 }; V.hashScanError = '';
+    render();
+    try {
+      const result = await window.nyxen.findExactDuplicates(S.tracks.map(({ id, path }) => ({ id, path })));
+      V.hashDuplicateGroups = Array.isArray(result.groups) ? result.groups : [];
+      V.hashScanSummary = result;
+      const count = V.hashDuplicateGroups.reduce((sum, group) => sum + group.ids.length, 0);
+      toast(count ? `Found ${V.hashDuplicateGroups.length} exact duplicate groups` : 'No exact duplicate files found');
+    } catch (error) {
+      V.hashScanError = error && error.message ? error.message : 'Could not scan exact file duplicates';
+      toast(V.hashScanError);
+    } finally {
+      V.hashScanBusy = false; V.hashScanProgress = null;
+      render();
+    }
+  },
   'sort-dir': () => { S.settings.asc = !S.settings.asc; save(); render(); },
   'shuffle-all': () => { if (!S.tracks.length) { toast('Import some music first'); return; } const l = ids(S.tracks); setMode('shuffle'); playIds(l, Math.floor(Math.random() * l.length)); },
   'go-fav': () => { S.settings.cat = 'favorites'; go('library'); },
@@ -1334,6 +1392,11 @@ async function boot() {
   initAudio(); audio.playbackRate = S.settings.speed || 1; initVideoPlayer(); applyTheme(); applyWallpaper(); applyCustomFont(); syncKeepAwake();
   $('#nav').innerHTML = NAV.map(([p, n, ic]) => `<button class="navb" data-act="nav" data-page="${p}">${svg(ic, 22)}<span>${n}</span></button>`).join('');
   window.nyxen.onScanProgress((p) => { $('#sidefoot').textContent = `Scanning ${p.done} / ${p.total}...`; });
+  window.nyxen.onDuplicateProgress((p) => {
+    V.hashScanProgress = p;
+    const status = $('#hash-scan-status');
+    if (status && V.hashScanBusy) status.textContent = p.total ? `Hashing ${p.done} of ${p.total} candidate files…` : 'Preparing your library for a safe scan…';
+  });
   window.nyxen.onCommand((c) => { if (c === 'toggle') toggle(); else if (c === 'next') next(true); else if (c === 'prev') prev(); else if (c === 'stop') audio.pause(); });
   const lt = S.last.id && track(S.last.id);
   if (lt) {
