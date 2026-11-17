@@ -147,7 +147,7 @@ function normalizeState(saved) {
   settings.rvPreset = Math.floor(finite(settings.rvPreset, 0, 0, REVERBS.length - 1));
   settings.mode = ['all', 'one', 'order', 'shuffle'].includes(settings.mode) ? settings.mode : 'all';
   settings.sort = ['title', 'artist', 'album', 'duration', 'added', 'plays'].includes(settings.sort) ? settings.sort : 'title';
-  settings.cat = ['tracks', 'albums', 'artists', 'genres', 'favorites'].includes(settings.cat) ? settings.cat : 'tracks';
+  settings.cat = ['tracks', 'albums', 'artists', 'genres', 'favorites', 'duplicates'].includes(settings.cat) ? settings.cat : 'tracks';
   for (const key of ['cover', 'eqOn', 'autoResume', 'rememberQueue', 'autoplaySimilar', 'buttonSounds', 'sleepFade', 'autoImport', 'keepAwake', 'asc']) {
     settings[key] = !!settings[key];
   }
@@ -497,7 +497,7 @@ function pageLibrary() {
     const metadataHtml = metadataMatches.length
       ? metadataMatches.map((t, i) => trow(t, metadataCtx, i, `<button class="icon ${V.selected.includes(t.id) ? 'on' : ''}" data-act="select-track" data-id="${t.id}" title="Select">${V.selected.includes(t.id) ? '✓' : '＋'}</button>`)).join('')
       : '<div class="sub">No normalized title + artist matches found.</div>';
-    return h + `<section class="glass duplicate-panel"><div class="split"><div class="grow"><h2>Exact file duplicates</h2><p>SHA-256 checks identify identical file contents, regardless of filename or metadata. Files with unique sizes are skipped because they cannot be byte-identical.</p></div></div><div class="sub" id="hash-scan-status">${esc(status)}</div>${V.hashScanError ? `<p class="duplicate-error">${esc(V.hashScanError)}</p>` : ''}${exactHtml}</section><section class="duplicate-panel"><h2>Possible metadata duplicates</h2><p class="sub">These tracks share a normalized title and artist. They may be different recordings or encodings; review before removing anything.</p>${metadataHtml}</section></div>`;
+    return h + `<section class="glass duplicate-panel"><div class="split"><div class="grow"><h2>Exact file duplicates</h2><p>SHA-256 checks identify identical file contents, regardless of filename or metadata. Files with unique sizes are skipped because they cannot be byte-identical.</p></div></div><div class="sub" id="hash-scan-status">${esc(status)}</div>${V.hashScanError ? `<p class="duplicate-error">${esc(V.hashScanError)}</p>` : ''}${exactHtml}</section><section class="glass duplicate-panel"><h2>Possible metadata duplicates</h2><p class="sub">These tracks share a normalized title and artist. They may be different recordings or encodings; review before removing anything.</p>${metadataHtml}</section></div>`;
   }
   if (cat === 'tracks' || cat === 'favorites') {
     const ts = cat === 'tracks' ? sortTracks(S.tracks) : sortTracks(S.tracks.filter(t=>t.fav)); const k = reg(ids(ts));
