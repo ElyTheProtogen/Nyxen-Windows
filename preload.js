@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('nyxen', {
   pickFiles: () => ipcRenderer.invoke('dialog:files'),
   scan: (targets, known) =>
     ipcRenderer.invoke('scan', targets, known),
+  findExactDuplicates: (tracks) => ipcRenderer.invoke('library:find-exact-duplicates', tracks),
 
   // Video file management
   pickVideoFiles: () =>
@@ -48,6 +49,13 @@ contextBridge.exposeInMainWorld('nyxen', {
     const listener = (_e, progress) => cb(progress);
     ipcRenderer.on('scan:progress', listener);
     return () => ipcRenderer.removeListener('scan:progress', listener);
+  },
+
+  onDuplicateProgress: (cb) => {
+    if (typeof cb !== 'function') return () => {};
+    const listener = (_e, progress) => cb(progress);
+    ipcRenderer.on('duplicates:progress', listener);
+    return () => ipcRenderer.removeListener('duplicates:progress', listener);
   },
 
   onCommand: (cb) => {
