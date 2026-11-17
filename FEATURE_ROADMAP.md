@@ -2,10 +2,10 @@
 
 This is a product backlog, not a claim that every item is implemented. Wave 1 (PR #11) and the initial Wave 2 batch (PR #12) are merged; shipped items are marked [x]. Items should be delivered in tested, user-visible batches; avoid shipping placeholder toggles or duplicating existing behavior.
 
-**Implementation note:** The current duplicate finder groups normalized title + artist matches for review; exact file-hash detection (item 1) remains open.
+**Implementation note:** Duplicate review now separates SHA-256 exact-content matches from normalized title + artist suggestions. Metadata matches are not proof that two files contain the same audio.
 
 ## 1. Library intelligence
-1. Duplicate-track detection by file hash.
+1. [x] Duplicate-track detection by file hash.
 2. Near-duplicate detection by title, artist and duration.
 3. Missing-file detection with relink action.
 4. Batch relink moved folders.
