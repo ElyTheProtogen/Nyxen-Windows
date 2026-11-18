@@ -99,6 +99,7 @@ function normalizeState(saved) {
       ...item,
       title: String(item.title || baseName(item.path) || 'Untitled'),
       artist: String(item.artist || 'Unknown artist'),
+      albumArtist: String(item.albumArtist || item.artist || 'Unknown artist'),
       album: String(item.album || 'Unknown album'),
       genre: String(item.genre || 'Unknown genre'),
       duration: finite(item.duration, 0, 0),
@@ -468,7 +469,7 @@ function pageLibrary() {
   let h = `<div class="page"><div class="split"><div class="grow"><h1>Library</h1><div class="sub">${S.tracks.length} songs · ${new Set(S.tracks.map((t) => t.album)).size} albums</div></div><button class="btn" data-act="import-folder">${svg('add', 18)} Import folder</button><button class="btn ghost" data-act="import-files">Import files</button></div>`;
   h += `<div class="toolbar">${cats.map(([k, n]) => `<button class="chip ${cat === k ? 'on' : ''}" data-act="cat" data-cat="${k}">${n}</button>`).join('')}`;
   if (cat === 'tracks' && !V.group) h += `<span class="grow"></span><select id="sortsel">${Object.entries(SORTS).map(([k, n]) => `<option value="${k}" ${S.settings.sort === k ? 'selected' : ''}>${n}</option>`).join('')}</select><button class="icon" data-act="sort-dir" title="Sort direction">${S.settings.asc ? '&#9650;' : '&#9660;'}</button><button class="btn ghost" data-act="shuffle-all">${svg('shuffle', 18)} Shuffle all</button>`;
-  if (['tracks','favorites','duplicates'].includes(cat)) h += `<span class="sub">${V.selected.length} selected</span>${V.selected.length ? `<button class="chip" data-act="bulk-fav">Toggle favorites</button><button class="chip" data-act="bulk-pl">Add to playlist</button><button class="chip" data-act="bulk-rm">Remove selected</button><button class="chip" data-act="clear-sel">Clear</button>` : ''}`;
+  if (['tracks','favorites','duplicates'].includes(cat)) h += `<span class="sub">${V.selected.length} selected</span>${V.selected.length ? `<button class="chip" data-act="bulk-meta">Edit genre / album artist</button><button class="chip" data-act="bulk-fav">Toggle favorites</button><button class="chip" data-act="bulk-pl">Add to playlist</button><button class="chip" data-act="bulk-rm">Remove selected</button><button class="chip" data-act="clear-sel">Clear</button>` : ''}`;
   if (cat === 'duplicates') h += `<button class="btn ghost" data-act="scan-exact-duplicates" ${V.hashScanBusy ? 'disabled' : ''}>${V.hashScanBusy ? 'Scanning…' : 'Scan exact file duplicates'}</button>`;
   h += '</div>';
   if (!S.tracks.length) return h + emptyState('Your library is empty', 'Add a folder with your music to get started.', 'Import a folder', 'import-folder') + '</div>';
@@ -492,12 +493,15 @@ function pageLibrary() {
             return `<section class="duplicate-group"><div class="split"><b>Exact match ${index + 1}</b><span class="sub">${formatFileSize(group.size)} · ${group.tracks.length} files</span></div>${group.tracks.map((t, i) => trow(t, ctx, i, `<button class="icon ${V.selected.includes(t.id) ? 'on' : ''}" data-act="select-track" data-id="${t.id}" title="Select">${V.selected.includes(t.id) ? '✓' : '＋'}</button><span class="duplicate-path" title="${esc(t.path)}">${esc(t.path.split(/[\\/]/).pop())}</span>`)).join('')}</section>`;
           }).join('')
         : '<div class="sub">No byte-identical files were found in the available same-size candidates.</div>';
-    const metadataMatches = sortTracks(duplicateTracks());
-    const metadataCtx = reg(ids(metadataMatches));
-    const metadataHtml = metadataMatches.length
-      ? metadataMatches.map((t, i) => trow(t, metadataCtx, i, `<button class="icon ${V.selected.includes(t.id) ? 'on' : ''}" data-act="select-track" data-id="${t.id}" title="Select">${V.selected.includes(t.id) ? '✓' : '＋'}</button>`)).join('')
-      : '<div class="sub">No normalized title + artist matches found.</div>';
-    return h + `<section class="glass duplicate-panel"><div class="split"><div class="grow"><h2>Exact file duplicates</h2><p>SHA-256 checks identify identical file contents, regardless of filename or metadata. Files with unique sizes are skipped because they cannot be byte-identical.</p></div></div><div class="sub" id="hash-scan-status">${esc(status)}</div>${V.hashScanError ? `<p class="duplicate-error">${esc(V.hashScanError)}</p>` : ''}${exactHtml}</section><section class="glass duplicate-panel"><h2>Possible metadata duplicates</h2><p class="sub">These tracks share a normalized title and artist. They may be different recordings or encodings; review before removing anything.</p>${metadataHtml}</section></div>`;
+    const nearGroups = window.NyxenNearDuplicateUtils.findNearDuplicateGroups(S.tracks);
+    const nearHtml = nearGroups.length
+      ? nearGroups.map((group) => {
+          const matches = group.ids.map(track).filter(Boolean);
+          const ctx = reg(ids(matches));
+          return `<section class="duplicate-group"><div class="split"><b>${esc(group.title)} · ${esc(group.artist)}</b><span class="sub">${matches.length} tracks · ${group.durationSpread.toFixed(1)}s spread</span></div>${matches.map((t, i) => trow(t, ctx, i, `<button class="icon ${V.selected.includes(t.id) ? 'on' : ''}" data-act="select-track" data-id="${t.id}" title="Select">${V.selected.includes(t.id) ? '✓' : '＋'}</button>`)).join('')}</section>`;
+        }).join('')
+      : '<div class="sub">No near-duplicate suggestions found. Matching requires the same normalized title and artist plus a close duration.</div>';
+    return h + `<section class="glass duplicate-panel"><div class="split"><div class="grow"><h2>Exact file duplicates</h2><p>SHA-256 checks identify identical file contents, regardless of filename or metadata. Files with unique sizes are skipped because they cannot be byte-identical.</p></div></div><div class="sub" id="hash-scan-status">${esc(status)}</div>${V.hashScanError ? `<p class="duplicate-error">${esc(V.hashScanError)}</p>` : ''}${exactHtml}</section><section class="glass duplicate-panel"><h2>Near-duplicate suggestions</h2><p class="sub">Matches use normalized title and artist plus a duration difference within 1% of the shorter track (2–6 seconds). They are review suggestions, not proof of identical audio.</p>${nearHtml}</section></div>`;
   }
   if (cat === 'tracks' || cat === 'favorites') {
     const ts = cat === 'tracks' ? sortTracks(S.tracks) : sortTracks(S.tracks.filter(t=>t.fav)); const k = reg(ids(ts));
@@ -514,11 +518,6 @@ function pageVideos() {
   if (!videos.length) return h + emptyState('No videos yet', 'Import MP4, M4V, WebM or MOV files to watch them in NyxenPlayer.', 'Import videos', 'import-video-files') + '</div>';
   h += videos.map(v => '<div class="video-row" data-video-id="' + esc(v.id) + '"><div class="video-mark">▶</div><div class="tmeta"><b>' + esc(v.title) + '</b><span>' + esc(v.path.split(/[\\/]/).pop()) + '</span><em>' + playsText(v.plays || 0) + '</em></div><button class="btn" data-act="play-video" data-id="' + esc(v.id) + '">Play</button><button class="icon" data-act="remove-video" data-id="' + esc(v.id) + '" title="Remove from library">' + svg('del', 19) + '</button></div>').join('');
   return h + '</div>';
-}
-function duplicateTracks() {
-  const key = t => [t.title,t.artist].map(x=>String(x||'').toLowerCase().replace(/\\.[^.]+$/,'').replace(/[^a-z0-9]+/g,' ').trim()).join('|');
-  const counts=new Map(); S.tracks.forEach(t=>counts.set(key(t),(counts.get(key(t))||0)+1));
-  return S.tracks.filter(t=>counts.get(key(t))>1);
 }
 function formatFileSize(bytes) {
   if (!Number.isFinite(bytes) || bytes < 0) return 'Unknown size';
@@ -538,15 +537,16 @@ function searchResults() {
   const q = (V.q || '').trim().toLowerCase();
   if (!q) return S.recentSearches?.length ? `<div class="sub" style="margin:14px 0">Recent searches</div><div class="toolbar">${S.recentSearches.slice(0,8).map(x=>`<button class="chip" data-act="search-recent" data-q="${esc(x)}">${esc(x)}</button>`).join('')}</div>` : `<div class="empty"><div class="art"><span class="ph">&#9834;</span></div>Find anything in your library</div>`;
   const tokens = q.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
-  const fields = V.sf === 'all' ? ['title','artist','album','genre','path'] : [V.sf];
-  const parsed = tokens.map(raw => { const negative=raw.startsWith('-'), token=negative?raw.slice(1):raw, m=token.match(/^(title|artist|album|genre|file|path):(.+)$/); return {negative,field:m?(m[1]==='file'?'path':m[1]):null,value:(m?m[2]:token).replace(/^"|"$/g,'').toLowerCase()}; });
+  const fields = V.sf === 'all' ? ['title','artist','album','albumArtist','genre','path'] : [V.sf];
+  const parsed = tokens.map(raw => { const negative=raw.startsWith('-'), token=negative?raw.slice(1):raw, m=token.match(/^(title|artist|album|albumartist|genre|file|path):(.+)$/); return {negative,field:m?(m[1]==='file'?'path':m[1]==='albumartist'?'albumArtist':m[1]):null,value:(m?m[2]:token).replace(/^"|"$/g,'').toLowerCase()}; });
   const res = S.tracks.filter(t=>parsed.every(x=>{const hay=(x.field?[t[x.field]||'']:fields.map(f=>t[f]||'')).join(' ').toLowerCase(),hit=hay.includes(x.value);return x.negative?!hit:hit;}));
   if (!res.length) return `<div class="empty">No results for &ldquo;${esc(q)}&rdquo;</div>`;
   const k = reg(ids(res));
   return `<div class="sub">${res.length} results</div>` + res.slice(0, 300).map((t, i) => trow(t, k, i)).join('');
 }
 function pageSearch() {
-  return `<div class="page"><h1>Search</h1><div class="toolbar"><input id="q" class="field" style="flex:1;min-width:260px" placeholder="artist:name, album:name, -term, or plain words" value="${esc(V.q)}" autocomplete="off">${['all', 'title', 'artist', 'album', 'genre'].map((f) => `<button class="chip ${V.sf === f ? 'on' : ''}" data-act="sf" data-f="${f}">${f === 'all' ? 'All' : f[0].toUpperCase() + f.slice(1) + 's'}</button>`).join('')}</div><div id="results">${searchResults()}</div></div>`;
+  const filters = [['all','All'],['title','Titles'],['artist','Artists'],['album','Albums'],['albumArtist','Album artists'],['genre','Genres']];
+  return `<div class="page"><h1>Search</h1><div class="toolbar"><input id="q" class="field" style="flex:1;min-width:260px" placeholder="artist:name, albumartist:name, -term, or plain words" value="${esc(V.q)}" autocomplete="off">${filters.map(([f,label]) => `<button class="chip ${V.sf === f ? 'on' : ''}" data-act="sf" data-f="${f}">${label}</button>`).join('')}</div><div id="results">${searchResults()}</div></div>`;
 }
 function pagePlaylists() {
   const smart = SMART.map((s) => { const ts = s.f(S.tracks); return `<div class="trow" data-act="open-pl" data-pl="${s.id}">${collage(ts.slice(0, 4))}<div class="tmeta"><b>${s.n}</b><span>${ts.length ? ts.length + ' songs · Auto playlist' : 'Play a few songs to fill this'}</span></div><button class="icon" data-act="play-pl" data-pl="${s.id}">${svg('play', 22)}</button></div>`; }).join('');
@@ -967,9 +967,28 @@ function applyWallpaper() {
 function editTrack(t) {
   if(!t) return;
   const m=$('#modal');
-  m.innerHTML=`<div class="dialog"><h2>Edit song info</h2><label>Title<input class="field" id="edit-title" value="${esc(t.title)}"></label><label>Artist<input class="field" id="edit-artist" value="${esc(t.artist)}"></label><label>Album<input class="field" id="edit-album" value="${esc(t.album)}"></label><label>Genre<input class="field" id="edit-genre" value="${esc(t.genre)}"></label><div class="actions"><button class="btn ghost" id="edit-cancel">Cancel</button><button class="btn" id="edit-save">Save changes</button></div></div>`;
+  m.innerHTML=`<div class="dialog"><h2>Edit song info</h2><label>Title<input class="field" id="edit-title" value="${esc(t.title)}"></label><label>Artist<input class="field" id="edit-artist" value="${esc(t.artist)}"></label><label>Album<input class="field" id="edit-album" value="${esc(t.album)}"></label><label>Album artist<input class="field" id="edit-album-artist" value="${esc(t.albumArtist || t.artist)}"></label><label>Genre<input class="field" id="edit-genre" value="${esc(t.genre)}"></label><div class="actions"><button class="btn ghost" id="edit-cancel">Cancel</button><button class="btn" id="edit-save">Save changes</button></div></div>`;
   m.classList.remove('hidden'); $('#edit-cancel').onclick=closeModal;
-  $('#edit-save').onclick=()=>{t.title=$('#edit-title').value.trim()||t.title;t.artist=$('#edit-artist').value.trim()||'Unknown artist';t.album=$('#edit-album').value.trim()||'Unknown album';t.genre=$('#edit-genre').value.trim()||'Unknown genre';save();closeModal();render();updatePlayerUI();toast('Song information updated');};
+  $('#edit-save').onclick=()=>{t.title=$('#edit-title').value.trim()||t.title;t.artist=$('#edit-artist').value.trim()||'Unknown artist';t.album=$('#edit-album').value.trim()||'Unknown album';t.albumArtist=$('#edit-album-artist').value.trim()||t.artist;t.genre=$('#edit-genre').value.trim()||'Unknown genre';save();closeModal();render();updatePlayerUI();toast('Song information updated');};
+}
+function editSelectedMetadata() {
+  const selected = S.tracks.filter((item) => V.selected.includes(item.id));
+  if (!selected.length) { V.selected = []; render(); return; }
+  const selectedIds = selected.map((item) => item.id);
+  const m = $('#modal');
+  m.innerHTML = `<div class="dialog"><h2>Edit selected metadata</h2><p class="sub">${selected.length} tracks selected. Only fields you fill in will be changed.</p><label>Genre<input class="field" id="bulk-genre" maxlength="80" placeholder="Leave blank to keep existing values"></label><label>Album artist<input class="field" id="bulk-album-artist" maxlength="120" placeholder="Leave blank to keep existing values"></label><p class="sub">Changes apply to Nyxen’s local library metadata only. Embedded tags and original audio files are not modified.</p><div class="actions"><button class="btn ghost" id="bulk-meta-cancel">Cancel</button><button class="btn" id="bulk-meta-save">Apply to ${selected.length} tracks</button></div></div>`;
+  m.classList.remove('hidden');
+  $('#bulk-meta-cancel').onclick = closeModal;
+  $('#bulk-meta-save').onclick = () => {
+    const changed = window.NyxenLibraryUtils.applyBulkMetadata(S.tracks, selectedIds, {
+      genre: $('#bulk-genre').value,
+      albumArtist: $('#bulk-album-artist').value
+    });
+    if (!changed) { toast('Enter a different genre or album artist'); return; }
+    V.selected = V.selected.filter((id) => !selectedIds.includes(id));
+    save(); closeModal(); render();
+    toast(`${changed} track${changed === 1 ? '' : 's'} updated in Nyxen`);
+  };
 }
 function renderLyrics(text) {
   if(!text) return 'No lyrics yet. Add a timed .lrc or plain .txt file for this song.';
@@ -1081,6 +1100,7 @@ const ACT = {
   'clear-sel': () => { V.selected=[]; render(); },
   'bulk-fav': () => { const list=S.tracks.filter(t=>V.selected.includes(t.id)), all=list.length>0&&list.every(t=>t.fav); list.forEach(t=>t.fav=!all); V.selected=[]; save(); render(); toast(all?'Favorites removed':'Added to favorites'); },
   'bulk-pl': () => { const list=V.selected.filter(id=>track(id)); if(list.length)pickPlaylist(list); },
+  'bulk-meta': () => editSelectedMetadata(),
   'bulk-rm': async () => { const list=V.selected.slice(); if(!list.length)return; if(!await confirmBox('Remove selected tracks?',list.length+' tracks will be removed from Nyxen. The original files stay on your computer.','Remove'))return; list.forEach(id=>removeTrack(id)); V.selected=[]; save(); render(); toast('Selected tracks removed from library'); },
   'play-pl': (d) => { const l = ids(plTracks(d.pl)); if (l.length) playIds(l, 0); else toast('Nothing here yet'); },
   'shuffle-pl': (d) => { const l = ids(plTracks(d.pl)); if (l.length) { setMode('shuffle'); playIds(l, Math.floor(Math.random() * l.length)); } else toast('Nothing here yet'); },
