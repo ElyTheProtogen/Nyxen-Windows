@@ -288,6 +288,7 @@ async function scan(targets, known) {
         path: f,
         title: c.title || path.basename(f, path.extname(f)),
         artist: c.artist || 'Unknown artist',
+        albumArtist: c.albumartist || c.artist || 'Unknown artist',
         album: c.album || 'Unknown album',
         genre: (c.genre && c.genre[0]) || 'Unknown genre',
         duration: meta.format.duration || 0,

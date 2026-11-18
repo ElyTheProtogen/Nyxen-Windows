@@ -2,11 +2,11 @@
 
 This is a product backlog, not a claim that every item is implemented. Wave 1 (PR #11) and the initial Wave 2 batch (PR #12) are merged; shipped items are marked [x]. Items should be delivered in tested, user-visible batches; avoid shipping placeholder toggles or duplicating existing behavior.
 
-**Implementation note:** Duplicate review now separates SHA-256 exact-content matches from normalized title + artist suggestions. Metadata matches are not proof that two files contain the same audio.
+**Implementation note:** Duplicate review separates SHA-256 exact-content matches from near-duplicate suggestions using normalized title + artist and a duration tolerance of 1% of the shorter track (2–6 seconds). Metadata matches are review aids, not proof that two files contain the same audio. Bulk genre and album-artist changes update Nyxen's local library metadata only; embedded tags and source files are untouched.
 
 ## 1. Library intelligence
 1. [x] Duplicate-track detection by file hash.
-2. Near-duplicate detection by title, artist and duration.
+2. [x] Near-duplicate detection by title, artist and duration.
 3. Missing-file detection with relink action.
 4. Batch relink moved folders.
 5. Library health report.
@@ -18,8 +18,8 @@ This is a product backlog, not a claim that every item is implemented. Wave 1 (P
 11. [x] Batch favorite and unfavorite.
 12. [x] Batch add to playlist.
 13. [x] Batch remove from library.
-14. Batch genre assignment.
-15. Batch album-artist correction.
+14. [x] Batch genre assignment.
+15. [x] Batch album-artist correction.
 16. Sort by file size.
 17. Sort by bitrate.
 18. Sort by sample rate.
