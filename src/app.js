@@ -75,7 +75,7 @@ const REVERBS = [{ n: 'Off', s: 0.1, d: 8 }, { n: 'Small room', s: 0.6, d: 3 }, 
 
 /* ================= state ================= */
 const DEFAULT = () => ({
-  v: 2, tracks: [], videos: [], videoFolders: [], playlists: [], folders: [], nextPl: 1, lastScan: 0, lastVideoScan: 0, firstDone: false, lyrics: {}, customThemes: [], customEq: {}, recentSearches: [],
+  v: 2, tracks: [], videos: [], videoFolders: [], playlists: [], playlistFolders: [], folders: [], nextPl: 1, nextPlaylistFolder: 1, lastScan: 0, lastVideoScan: 0, firstDone: false, lyrics: {}, customThemes: [], customEq: {}, recentSearches: [],
   settings: { theme: 1, wallpaper: 0, cover: true, eqOn: true, gains: Array(10).fill(0), pre: 0, bass: 0, preset: 'Flat', rvPreset: 0, rvMix: 0.3, volume: 0.8, speed: 1, autoResume: false, rememberQueue: true, autoplaySimilar: false, buttonSounds: true, sleepFade: true, autoImport: true, keepAwake: false, mode: 'all', sort: 'title', asc: true, cat: 'tracks' },
   last: { id: null, pos: 0 }, savedQueue: [], savedQueueIndex: 0
 });
@@ -119,10 +119,17 @@ function normalizeState(saved) {
     fav: !!item.fav,
     type: 'video'
   }));
+  const playlistFolders = (Array.isArray(saved.playlistFolders) ? saved.playlistFolders : []).filter((item) => isObject(item) && typeof item.id === 'string' && /^f\d+$/.test(item.id)).map((item) => ({
+    id: item.id,
+    name: String(item.name || 'Untitled folder').slice(0, 30)
+  }));
+  const playlistFolderIds = new Set(playlistFolders.map((item) => item.id));
+  const highestPlaylistFolder = playlistFolders.reduce((max, item) => Math.max(max, Number(item.id.slice(1)) || 0), 0);
   const playlists = (Array.isArray(saved.playlists) ? saved.playlists : []).filter((item) => isObject(item) && typeof item.id === 'string' && item.id.startsWith('p') && Number.isInteger(Number(item.id.slice(1))) && Number(item.id.slice(1)) > 0).map((item) => ({
     id: item.id,
     name: String(item.name || 'Untitled playlist'),
-    ids: Array.isArray(item.ids) ? item.ids.filter((id) => typeof id === 'string') : []
+    ids: Array.isArray(item.ids) ? item.ids.filter((id) => typeof id === 'string') : [],
+    folderId: playlistFolderIds.has(item.folderId) ? item.folderId : ''
   }));
   const settings = { ...d.settings, ...(isObject(saved.settings) ? saved.settings : {}) };
   settings.gains = Array.isArray(settings.gains) && settings.gains.length === 10
@@ -140,7 +147,7 @@ function normalizeState(saved) {
   settings.rvPreset = Math.floor(finite(settings.rvPreset, 0, 0, REVERBS.length - 1));
   settings.mode = ['all', 'one', 'order', 'shuffle'].includes(settings.mode) ? settings.mode : 'all';
   settings.sort = ['title', 'artist', 'album', 'duration', 'added', 'plays'].includes(settings.sort) ? settings.sort : 'title';
-  settings.cat = ['tracks', 'albums', 'artists', 'genres', 'favorites'].includes(settings.cat) ? settings.cat : 'tracks';
+  settings.cat = ['tracks', 'albums', 'artists', 'genres', 'favorites', 'duplicates'].includes(settings.cat) ? settings.cat : 'tracks';
   for (const key of ['cover', 'eqOn', 'autoResume', 'rememberQueue', 'autoplaySimilar', 'buttonSounds', 'sleepFade', 'autoImport', 'keepAwake', 'asc']) {
     settings[key] = !!settings[key];
   }
@@ -162,8 +169,10 @@ function normalizeState(saved) {
     videos,
     videoFolders: Array.isArray(saved.videoFolders) ? saved.videoFolders.filter((item) => typeof item === 'string') : [],
     playlists,
+    playlistFolders,
     folders: Array.isArray(saved.folders) ? saved.folders.filter((item) => typeof item === 'string') : [],
     nextPl: Math.max(1, Math.floor(finite(saved.nextPl, 1, 1))),
+    nextPlaylistFolder: Math.max(highestPlaylistFolder + 1, Math.floor(finite(saved.nextPlaylistFolder, highestPlaylistFolder + 1, 1))),
     lastScan: finite(saved.lastScan, 0, 0),
     lastVideoScan: finite(saved.lastVideoScan, 0, 0),
     firstDone: !!saved.firstDone,
@@ -241,6 +250,16 @@ function shuffleQueue() {
   Q.ids = [c, ...rest]; Q.i = 0;
 }
 function unshuffleQueue() { if (!Q.orig) return; const c = Q.ids[Q.i]; Q.ids = Q.orig; Q.orig = null; Q.i = Math.max(0, Q.ids.indexOf(c)); }
+function moveQueueItem(from, to) {
+  const result = window.NyxenQueueUtils.moveItem(Q.ids, Q.i, from, to);
+  if (!result.moved) return false;
+  Q.ids = result.ids; Q.i = result.index;
+  // A manual reorder becomes the new authoritative order, including after shuffle mode is disabled.
+  Q.orig = null;
+  S.savedQueue = Q.ids.slice(); S.savedQueueIndex = Q.i;
+  save(); renderQueue();
+  return true;
+}
 function playIds(list, i = 0) {
   if (!list.length) return;
   Q = { ids: list.slice(), i, orig: null };
@@ -384,7 +403,7 @@ async function applyCoverAccent() {
 }
 
 /* ================= UI helpers ================= */
-const V = { page: 'home', arg: null, group: null, q: '', sf: 'all', selected: [] };
+const V = { page: 'home', arg: null, group: null, q: '', sf: 'all', selected: [], hashDuplicateGroups: null, hashScanSummary: null, hashScanBusy: false, hashScanProgress: null, hashScanError: '' };
 let ctn = 0; const CTX = new Map();
 const reg = (list) => { const k = ++ctn; CTX.set(k, list); if (CTX.size > 40) CTX.delete(CTX.keys().next().value); return k; };
 const ids = (list) => list.map((t) => t.id);
@@ -450,15 +469,39 @@ function pageLibrary() {
   h += `<div class="toolbar">${cats.map(([k, n]) => `<button class="chip ${cat === k ? 'on' : ''}" data-act="cat" data-cat="${k}">${n}</button>`).join('')}`;
   if (cat === 'tracks' && !V.group) h += `<span class="grow"></span><select id="sortsel">${Object.entries(SORTS).map(([k, n]) => `<option value="${k}" ${S.settings.sort === k ? 'selected' : ''}>${n}</option>`).join('')}</select><button class="icon" data-act="sort-dir" title="Sort direction">${S.settings.asc ? '&#9650;' : '&#9660;'}</button><button class="btn ghost" data-act="shuffle-all">${svg('shuffle', 18)} Shuffle all</button>`;
   if (['tracks','favorites','duplicates'].includes(cat)) h += `<span class="sub">${V.selected.length} selected</span>${V.selected.length ? `<button class="chip" data-act="bulk-fav">Toggle favorites</button><button class="chip" data-act="bulk-pl">Add to playlist</button><button class="chip" data-act="bulk-rm">Remove selected</button><button class="chip" data-act="clear-sel">Clear</button>` : ''}`;
+  if (cat === 'duplicates') h += `<button class="btn ghost" data-act="scan-exact-duplicates" ${V.hashScanBusy ? 'disabled' : ''}>${V.hashScanBusy ? 'Scanning…' : 'Scan exact file duplicates'}</button>`;
   h += '</div>';
   if (!S.tracks.length) return h + emptyState('Your library is empty', 'Add a folder with your music to get started.', 'Import a folder', 'import-folder') + '</div>';
   if (V.group) {
     const ts = groupTracks(), k = reg(ids(ts));
     return h + `<div class="split" style="margin:12px 0"><button class="chip" data-act="back">&larr; Back</button><div class="grow"><h2 style="margin:0">${esc(V.group.name)}</h2><div class="sub">${ts.length} songs</div></div><button class="btn" data-act="play-group">${svg('play', 18)} Play</button><button class="btn ghost" data-act="shuffle-group">${svg('shuffle', 18)} Shuffle</button></div>${ts.map((t, i) => trow(t, k, i)).join('')}</div>`;
   }
-  if (cat === 'tracks' || cat === 'favorites' || cat === 'duplicates') {
-    const ts = cat === 'tracks' ? sortTracks(S.tracks) : cat === 'favorites' ? sortTracks(S.tracks.filter(t=>t.fav)) : sortTracks(duplicateTracks()); const k = reg(ids(ts));
-    return h + (ts.length ? ts.map((t, i) => trow(t, k, i, `<button class="icon ${V.selected.includes(t.id) ? 'on' : ''}" data-act="select-track" data-id="${t.id}" title="Select">${V.selected.includes(t.id) ? '✓' : '＋'}</button>`)).join('') : emptyState(cat === 'duplicates' ? 'No duplicates found' : 'No tracks here yet', cat === 'duplicates' ? 'Matching title and artist appear here. Original files are never deleted automatically.' : 'Add music or change your filters.')) + '</div>';
+  if (cat === 'duplicates') {
+    const exactGroups = (V.hashDuplicateGroups || []).map((group) => ({ ...group, tracks: group.ids.map(track).filter(Boolean) })).filter((group) => group.tracks.length > 1);
+    const exactCount = exactGroups.reduce((sum, group) => sum + group.tracks.length, 0);
+    const status = V.hashScanBusy
+      ? (V.hashScanProgress && V.hashScanProgress.total ? `Hashing ${V.hashScanProgress.done} of ${V.hashScanProgress.total} candidate files…` : 'Preparing your library for a safe scan…')
+      : V.hashScanSummary
+        ? `${exactGroups.length} exact groups · ${exactCount} matching tracks · ${V.hashScanSummary.checkedFiles} files hashed · ${V.hashScanSummary.unavailableFiles} unavailable`
+        : 'Exact matching compares SHA-256 file contents. Original files are only read, never changed.';
+    const exactHtml = V.hashDuplicateGroups === null
+      ? '<div class="sub">Run a scan to find byte-identical audio files, even when their names or tags differ.</div>'
+      : exactGroups.length
+        ? exactGroups.map((group, index) => {
+            const ctx = reg(ids(group.tracks));
+            return `<section class="duplicate-group"><div class="split"><b>Exact match ${index + 1}</b><span class="sub">${formatFileSize(group.size)} · ${group.tracks.length} files</span></div>${group.tracks.map((t, i) => trow(t, ctx, i, `<button class="icon ${V.selected.includes(t.id) ? 'on' : ''}" data-act="select-track" data-id="${t.id}" title="Select">${V.selected.includes(t.id) ? '✓' : '＋'}</button><span class="duplicate-path" title="${esc(t.path)}">${esc(t.path.split(/[\\/]/).pop())}</span>`)).join('')}</section>`;
+          }).join('')
+        : '<div class="sub">No byte-identical files were found in the available same-size candidates.</div>';
+    const metadataMatches = sortTracks(duplicateTracks());
+    const metadataCtx = reg(ids(metadataMatches));
+    const metadataHtml = metadataMatches.length
+      ? metadataMatches.map((t, i) => trow(t, metadataCtx, i, `<button class="icon ${V.selected.includes(t.id) ? 'on' : ''}" data-act="select-track" data-id="${t.id}" title="Select">${V.selected.includes(t.id) ? '✓' : '＋'}</button>`)).join('')
+      : '<div class="sub">No normalized title + artist matches found.</div>';
+    return h + `<section class="glass duplicate-panel"><div class="split"><div class="grow"><h2>Exact file duplicates</h2><p>SHA-256 checks identify identical file contents, regardless of filename or metadata. Files with unique sizes are skipped because they cannot be byte-identical.</p></div></div><div class="sub" id="hash-scan-status">${esc(status)}</div>${V.hashScanError ? `<p class="duplicate-error">${esc(V.hashScanError)}</p>` : ''}${exactHtml}</section><section class="glass duplicate-panel"><h2>Possible metadata duplicates</h2><p class="sub">These tracks share a normalized title and artist. They may be different recordings or encodings; review before removing anything.</p>${metadataHtml}</section></div>`;
+  }
+  if (cat === 'tracks' || cat === 'favorites') {
+    const ts = cat === 'tracks' ? sortTracks(S.tracks) : sortTracks(S.tracks.filter(t=>t.fav)); const k = reg(ids(ts));
+    return h + (ts.length ? ts.map((t, i) => trow(t, k, i, `<button class="icon ${V.selected.includes(t.id) ? 'on' : ''}" data-act="select-track" data-id="${t.id}" title="Select">${V.selected.includes(t.id) ? '✓' : '＋'}</button>`)).join('') : emptyState('No tracks here yet', 'Add music or change your filters.')) + '</div>';
   }
   const field = { albums: 'album', artists: 'artist', genres: 'genre' }[cat]; const map = new Map();
   S.tracks.forEach((t) => { if (!map.has(t[field])) map.set(t[field], []); map.get(t[field]).push(t); });
@@ -477,6 +520,20 @@ function duplicateTracks() {
   const counts=new Map(); S.tracks.forEach(t=>counts.set(key(t),(counts.get(key(t))||0)+1));
   return S.tracks.filter(t=>counts.get(key(t))>1);
 }
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes < 0) return 'Unknown size';
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let value = bytes / 1024, unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+  return `${value.toFixed(value >= 100 ? 0 : value >= 10 ? 1 : 2)} ${units[unit]}`;
+}
+function invalidateDuplicateScan() {
+  V.hashDuplicateGroups = null;
+  V.hashScanSummary = null;
+  V.hashScanProgress = null;
+  V.hashScanError = '';
+}
 function searchResults() {
   const q = (V.q || '').trim().toLowerCase();
   if (!q) return S.recentSearches?.length ? `<div class="sub" style="margin:14px 0">Recent searches</div><div class="toolbar">${S.recentSearches.slice(0,8).map(x=>`<button class="chip" data-act="search-recent" data-q="${esc(x)}">${esc(x)}</button>`).join('')}</div>` : `<div class="empty"><div class="art"><span class="ph">&#9834;</span></div>Find anything in your library</div>`;
@@ -493,15 +550,22 @@ function pageSearch() {
 }
 function pagePlaylists() {
   const smart = SMART.map((s) => { const ts = s.f(S.tracks); return `<div class="trow" data-act="open-pl" data-pl="${s.id}">${collage(ts.slice(0, 4))}<div class="tmeta"><b>${s.n}</b><span>${ts.length ? ts.length + ' songs · Auto playlist' : 'Play a few songs to fill this'}</span></div><button class="icon" data-act="play-pl" data-pl="${s.id}">${svg('play', 22)}</button></div>`; }).join('');
-  const mine = S.playlists.map((p) => { const ts = plTracks(p.id); return `<div class="trow" data-act="open-pl" data-pl="${p.id}">${collage(ts.slice(0, 4))}<div class="tmeta"><b>${esc(p.name)}</b><span>${ts.length} songs</span></div><button class="icon" data-act="play-pl" data-pl="${p.id}">${svg('play', 22)}</button><button class="icon" data-act="del-pl" data-pl="${p.id}">${svg('del', 20)}</button></div>`; }).join('');
-  return `<div class="page"><div class="split"><div class="grow"><h1>Playlists</h1></div><button class="btn" data-act="new-pl">${svg('add', 18)} New playlist</button></div><h2>Automatic</h2>${smart}<h2>Yours</h2>${mine || '<div class="sub">No custom playlists yet. Create one with &ldquo;New playlist&rdquo;.</div>'}</div>`;
+  const playlistRow = (p) => { const ts = plTracks(p.id); return `<div class="trow" data-act="open-pl" data-pl="${p.id}">${collage(ts.slice(0, 4))}<div class="tmeta"><b>${esc(p.name)}</b><span>${ts.length} songs</span></div><button class="icon" data-act="play-pl" data-pl="${p.id}">${svg('play', 22)}</button><button class="icon" data-act="del-pl" data-pl="${p.id}" title="Delete playlist">${svg('del', 20)}</button></div>`; };
+  const folderSections = S.playlistFolders.map((folder) => {
+    const items = S.playlists.filter((p) => p.folderId === folder.id);
+    return `<section class="playlist-folder"><div class="split playlist-folder-heading"><div class="grow"><h2>${esc(folder.name)}</h2><div class="sub">${items.length} playlists</div></div><button class="chip" data-act="rename-pl-folder" data-id="${folder.id}">Rename</button><button class="chip" data-act="del-pl-folder" data-id="${folder.id}">Delete folder</button></div>${items.map(playlistRow).join('') || '<div class="sub folder-empty">This folder is empty. Use a playlist’s context menu to move one here.</div>'}</section>`;
+  }).join('');
+  const unfiled = S.playlists.filter((p) => !p.folderId);
+  const unfiledSection = unfiled.length ? `<section class="playlist-folder"><h2>Unfiled</h2>${unfiled.map(playlistRow).join('')}</section>` : '';
+  const empty = !S.playlists.length && !S.playlistFolders.length ? '<div class="sub">No custom playlists or folders yet. Create one with the buttons above.</div>' : '';
+  return `<div class="page"><div class="split"><div class="grow"><h1>Playlists</h1><div class="sub">${S.playlists.length} playlists · ${S.playlistFolders.length} folders</div></div><button class="btn ghost" data-act="new-pl-folder">New folder</button><button class="btn" data-act="new-pl">${svg('add', 18)} New playlist</button></div><h2>Automatic</h2>${smart}<h2>Your playlists</h2>${folderSections}${unfiledSection}${empty}</div>`;
 }
 function pagePlaylist() {
   const id = V.arg, smart = id.startsWith('s:'), sm = smart ? SMART.find((s) => s.id === id) : null, p = smart ? null : S.playlists.find((x) => x.id === id);
   if (!sm && !p) { V.page = 'playlists'; return pagePlaylists(); }
   const ts = plTracks(id), k = reg(ids(ts));
   const rows = ts.map((t, i) => (smart ? trow(t, k, i) : trow(t, k, i, `<button class="icon" data-act="pl-up" data-pl="${id}" data-i="${i}">${svg('up', 20)}</button><button class="icon" data-act="pl-down" data-pl="${id}" data-i="${i}">${svg('down', 20)}</button><button class="icon" data-act="pl-rm" data-pl="${id}" data-i="${i}">${svg('close', 18)}</button>`))).join('');
-  return `<div class="page"><button class="chip" data-act="nav" data-page="playlists">&larr; Playlists</button><div class="split" style="margin-top:16px">${collage(ts.slice(0, 4), 'big')}<div class="grow"><h1>${esc(sm ? sm.n : p.name)}</h1><div class="sub">${ts.length} songs · ${Math.floor(ts.reduce((a, t) => a + t.duration, 0) / 60)} min${smart ? ' · Auto playlist' : ''}</div><div class="toolbar"><button class="btn" data-act="play-pl" data-pl="${id}">${svg('play', 18)} Play</button><button class="btn ghost" data-act="shuffle-pl" data-pl="${id}">${svg('shuffle', 18)} Shuffle</button>${smart ? '' : `<button class="btn ghost" data-act="rename-pl" data-pl="${id}">Rename</button><button class="btn danger" data-act="del-pl" data-pl="${id}">Delete</button>`}</div></div></div><div style="margin-top:16px">${rows || emptyState(smart ? 'Nothing here yet' : 'This playlist is empty', smart ? 'Play some songs and they will show up here.' : 'Use the ... menu on any song to add it.')}</div></div>`;
+  return `<div class="page"><button class="chip" data-act="nav" data-page="playlists">&larr; Playlists</button><div class="split" style="margin-top:16px">${collage(ts.slice(0, 4), 'big')}<div class="grow"><h1>${esc(sm ? sm.n : p.name)}</h1><div class="sub">${ts.length} songs · ${Math.floor(ts.reduce((a, t) => a + t.duration, 0) / 60)} min${smart ? ' · Auto playlist' : p.folderId ? ' · ' + esc((S.playlistFolders.find((folder) => folder.id === p.folderId) || {}).name || 'Folder') : ''}</div><div class="toolbar"><button class="btn" data-act="play-pl" data-pl="${id}">${svg('play', 18)} Play</button><button class="btn ghost" data-act="shuffle-pl" data-pl="${id}">${svg('shuffle', 18)} Shuffle</button>${smart ? '' : `<button class="btn ghost" data-act="move-pl-folder" data-pl="${id}">Move to folder</button><button class="btn ghost" data-act="rename-pl" data-pl="${id}">Rename</button><button class="btn danger" data-act="del-pl" data-pl="${id}">Delete</button>`}</div></div></div><div style="margin-top:16px">${rows || emptyState(smart ? 'Nothing here yet' : 'This playlist is empty', smart ? 'Play some songs and they will show up here.' : 'Use the ... menu on any song to add it.')}</div></div>`;
 }
 const slider = (id, label, min, max, step, val, unit) => `<div class="split" style="margin:6px 0"><span style="width:110px">${label}</span><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${val}"><span id="${id}-v" style="width:60px;text-align:right">${val}${unit}</span></div>`;
 function pageStudio() {
@@ -611,8 +675,8 @@ function updatePlayerUI() {
 }
 function renderQueue() {
   const q = $('#queue'); if (q.classList.contains('off')) return;
-  q.innerHTML = `<div class="split"><h2 class="grow" style="margin:0">Queue</h2><button class="icon" data-act="queue-toggle">${svg('close', 22)}</button></div><div class="sub" style="margin-bottom:10px">${Q.ids.length} songs &middot; ${MODE_NAME[S.settings.mode]}</div>` +
-    Q.ids.map((id, i) => { const t = track(id); return t ? `<div class="trow ${i === Q.i ? 'cur' : ''}" data-act="q-jump" data-id="${t.id}" data-i="${i}">${art(t, 'sm')}<div class="tmeta"><b>${esc(t.title)}</b><span>${esc(t.artist)}</span></div><button class="icon" data-act="q-rm" data-i="${i}">${svg('close', 18)}</button></div>` : ''; }).join('');
+  q.innerHTML = `<div class="split"><h2 class="grow" style="margin:0">Queue</h2><button class="icon" data-act="queue-toggle">${svg('close', 22)}</button></div><div class="sub" style="margin-bottom:10px">${Q.ids.length} songs &middot; ${MODE_NAME[S.settings.mode]}</div><div class="sub queue-hint">Drag the grip to reorder, or use the arrow controls.</div>` +
+    Q.ids.map((id, i) => { const t = track(id); return t ? `<div class="trow queue-item ${i === Q.i ? 'cur' : ''}" data-act="q-jump" data-id="${t.id}" data-i="${i}"><span class="queue-grip" draggable="true" title="Drag to reorder" aria-label="Drag to reorder">⠿</span>${art(t, 'sm')}<div class="tmeta"><b>${esc(t.title)}</b><span>${esc(t.artist)}</span></div><button class="icon queue-move" data-act="q-up" data-i="${i}" title="Move up" aria-label="Move up" ${i === 0 ? 'disabled' : ''}>↑</button><button class="icon queue-move" data-act="q-down" data-i="${i}" title="Move down" aria-label="Move down" ${i === Q.ids.length - 1 ? 'disabled' : ''}>↓</button><button class="icon" data-act="q-rm" data-i="${i}" title="Remove from queue">${svg('close', 18)}</button></div>` : ''; }).join('');
 }
 let idle = 0, vizAccent = '#b14bff', vizAccentT = 0; const vdata = new Uint8Array(256);
 function vizLoop() {
@@ -661,7 +725,22 @@ function pickPlaylist(toAdd) {
   m.classList.remove('hidden');
   $$('[data-pick]', m).forEach((b) => b.addEventListener('click', () => { const p = S.playlists.find((x) => x.id === b.dataset.pick); toAdd.forEach((i) => { if (!p.ids.includes(i)) p.ids.push(i); }); save(); closeModal(); toast('Added to ' + p.name); if (V.page === 'playlists') render(); }));
   $('#pk-x').addEventListener('click', closeModal);
-  $('#pk-new').addEventListener('click', async () => { closeModal(); const n = await askName('New playlist', '', 'Create'); if (n) { S.playlists.push({ id: 'p' + S.nextPl++, name: n, ids: [...toAdd] }); save(); toast('Created ' + n); if (V.page === 'playlists') render(); } });
+  $('#pk-new').addEventListener('click', async () => { closeModal(); const n = await askName('New playlist', '', 'Create'); if (n) { S.playlists.push({ id: 'p' + S.nextPl++, name: n, ids: [...toAdd], folderId: '' }); save(); toast('Created ' + n); if (V.page === 'playlists') render(); } });
+}
+function choosePlaylistFolder(playlistId) {
+  const playlist = S.playlists.find((item) => item.id === playlistId);
+  if (!playlist) return;
+  const choices = [{ id: '', name: 'Unfiled' }, ...S.playlistFolders];
+  const modal = $('#modal');
+  modal.innerHTML = `<div class="dialog"><h2>Move playlist</h2><div class="sub">Choose a folder for “${esc(playlist.name)}”.</div><div class="folder-choices">${choices.map((folder) => `<button class="trow" type="button" data-folder-choice="${folder.id}"><div class="tmeta"><b>${esc(folder.name)}</b><span>${folder.id ? 'Playlist folder' : 'Not in a folder'}</span></div><span class="folder-choice-mark">${playlist.folderId === folder.id ? '✓' : ''}</span></button>`).join('')}</div><div class="actions"><button class="btn ghost" id="folder-cancel">Cancel</button></div></div>`;
+  modal.classList.remove('hidden');
+  $$('[data-folder-choice]', modal).forEach((button) => button.addEventListener('click', () => {
+    playlist.folderId = button.dataset.folderChoice || '';
+    save(); closeModal(); render();
+    const folder = S.playlistFolders.find((item) => item.id === playlist.folderId);
+    toast(playlist.folderId ? 'Moved to ' + folder.name : 'Moved to Unfiled');
+  }));
+  $('#folder-cancel').addEventListener('click', closeModal);
 }
 function greet(first) { toast(first || !S.firstDone ? 'Welcome to NyxenPlayer!' : greeting() + ' to NyxenPlayer'); S.firstDone = true; save(); }
 /* ================= library actions ================= */
@@ -699,6 +778,7 @@ async function importTargets(targets, folders, silent) {
   try {
     const r = await window.nyxen.scan(targets, S.tracks.map((t) => t.id));
     r.added.forEach((t) => S.tracks.push(t));
+    if (r.added.length) invalidateDuplicateScan();
     folders.forEach((f) => { if (!S.folders.includes(f)) S.folders.push(f); });
     S.lastScan = Date.now(); reindex(); save();
     if (!silent) { if (r.added.length) toast(`Added ${r.added.length} new songs`); else toast('No new songs found'); }
@@ -828,6 +908,7 @@ function enqueue(id, afterCurrent) {
 }
 function removeTrack(id) {
   S.tracks = S.tracks.filter((t) => t.id !== id);
+  invalidateDuplicateScan();
   S.playlists.forEach((p) => { p.ids = p.ids.filter((x) => x !== id); });
   const wasCur = !!(cur && cur.id === id);
   const removedBeforeCurrent = Q.ids.slice(0, Math.max(0, Q.i)).filter((queuedId) => queuedId === id).length;
@@ -932,6 +1013,24 @@ const ACT = {
   'play-group': () => playIds(ids(groupTracks()), 0),
   'shuffle-group': () => { const l = ids(groupTracks()); if (l.length) { setMode('shuffle'); playIds(l, Math.floor(Math.random() * l.length)); } },
   cat: (d) => { S.settings.cat = d.cat; V.group = null; save(); render(); },
+  'scan-exact-duplicates': async () => {
+    if (V.hashScanBusy) return;
+    V.hashScanBusy = true; V.hashScanProgress = { done: 0, total: 0 }; V.hashScanError = '';
+    render();
+    try {
+      const result = await window.nyxen.findExactDuplicates(S.tracks.map(({ id, path }) => ({ id, path })));
+      V.hashDuplicateGroups = Array.isArray(result.groups) ? result.groups : [];
+      V.hashScanSummary = result;
+      const count = V.hashDuplicateGroups.reduce((sum, group) => sum + group.ids.length, 0);
+      toast(count ? `Found ${V.hashDuplicateGroups.length} exact duplicate groups` : 'No exact duplicate files found');
+    } catch (error) {
+      V.hashScanError = error && error.message ? error.message : 'Could not scan exact file duplicates';
+      toast(V.hashScanError);
+    } finally {
+      V.hashScanBusy = false; V.hashScanProgress = null;
+      render();
+    }
+  },
   'sort-dir': () => { S.settings.asc = !S.settings.asc; save(); render(); },
   'shuffle-all': () => { if (!S.tracks.length) { toast('Import some music first'); return; } const l = ids(S.tracks); setMode('shuffle'); playIds(l, Math.floor(Math.random() * l.length)); },
   'go-fav': () => { S.settings.cat = 'favorites'; go('library'); },
@@ -985,7 +1084,30 @@ const ACT = {
   'bulk-rm': async () => { const list=V.selected.slice(); if(!list.length)return; if(!await confirmBox('Remove selected tracks?',list.length+' tracks will be removed from Nyxen. The original files stay on your computer.','Remove'))return; list.forEach(id=>removeTrack(id)); V.selected=[]; save(); render(); toast('Selected tracks removed from library'); },
   'play-pl': (d) => { const l = ids(plTracks(d.pl)); if (l.length) playIds(l, 0); else toast('Nothing here yet'); },
   'shuffle-pl': (d) => { const l = ids(plTracks(d.pl)); if (l.length) { setMode('shuffle'); playIds(l, Math.floor(Math.random() * l.length)); } else toast('Nothing here yet'); },
-  'new-pl': async () => { const n = await askName('New playlist', '', 'Create'); if (n) { S.playlists.push({ id: 'p' + S.nextPl++, name: n, ids: [] }); save(); toast('Created ' + n); render(); } },
+  'new-pl': async () => { const n = await askName('New playlist', '', 'Create'); if (n) { S.playlists.push({ id: 'p' + S.nextPl++, name: n, ids: [], folderId: '' }); save(); toast('Created ' + n); render(); } },
+  'new-pl-folder': async () => {
+    const name = await askName('New playlist folder', '', 'Create');
+    if (!name) return;
+    if (S.playlistFolders.some((folder) => folder.name.toLocaleLowerCase() === name.toLocaleLowerCase())) { toast('A folder with that name already exists'); return; }
+    const folder = { id: 'f' + S.nextPlaylistFolder++, name };
+    S.playlistFolders.push(folder); save(); render(); toast('Created folder ' + name);
+  },
+  'rename-pl-folder': async (d) => {
+    const folder = S.playlistFolders.find((item) => item.id === d.id);
+    if (!folder) return;
+    const name = await askName('Rename folder', folder.name, 'Save');
+    if (!name) return;
+    if (S.playlistFolders.some((item) => item.id !== folder.id && item.name.toLocaleLowerCase() === name.toLocaleLowerCase())) { toast('A folder with that name already exists'); return; }
+    folder.name = name; save(); render(); toast('Folder renamed');
+  },
+  'del-pl-folder': async (d) => {
+    const folder = S.playlistFolders.find((item) => item.id === d.id);
+    if (!folder || !await confirmBox('Delete playlist folder?', 'The folder will be removed. Its playlists will be kept in Unfiled.', 'Delete folder')) return;
+    S.playlists.forEach((playlist) => { if (playlist.folderId === folder.id) playlist.folderId = ''; });
+    S.playlistFolders = S.playlistFolders.filter((item) => item.id !== folder.id);
+    save(); render(); toast('Folder deleted; playlists kept');
+  },
+  'move-pl-folder': (d) => choosePlaylistFolder(d.pl),
   'rename-pl': async (d) => { const p = S.playlists.find((x) => x.id === d.pl); if (!p) return; const n = await askName('Rename playlist', p.name, 'Save'); if (n) { p.name = n; save(); render(); } },
   'del-pl': async (d) => { const p = S.playlists.find((x) => x.id === d.pl); if (p && await confirmBox('Delete playlist?', `"${p.name}" will be deleted. Your songs stay in the library.`, 'Delete')) { S.playlists = S.playlists.filter((x) => x.id !== d.pl); if (V.page === 'playlist') V.page = 'playlists'; save(); render(); } },
   'pl-up': (d) => movePl(d.pl, +d.i, -1), 'pl-down': (d) => movePl(d.pl, +d.i, 1),
@@ -998,6 +1120,8 @@ const ACT = {
   'np-close': () => $('#np').classList.add('off'),
   'queue-toggle': () => { const q = $('#queue'); q.classList.toggle('off'); renderQueue(); },
   'q-jump': (d) => { Q.i = +d.i; loadCurrent(true); },
+  'q-up': (d) => moveQueueItem(+d.i, +d.i - 1),
+  'q-down': (d) => moveQueueItem(+d.i, +d.i + 1),
   'q-rm': (d, e) => {
     e.stopPropagation();
     const i = +d.i;
@@ -1109,6 +1233,7 @@ function runContextCommand(button) {
   else if (cmd === 'playlist-shuffle') ACT['shuffle-pl']({pl:id});
   else if (cmd === 'playlist-rename') ACT['rename-pl']({pl:id});
   else if (cmd === 'playlist-delete') ACT['del-pl']({pl:id});
+  else if (cmd === 'playlist-move') ACT['move-pl-folder']({pl:id});
   else if (cmd === 'group-open') { const el = button.dataset.contextGroup; V.group={cat:S.settings.cat,name:el}; render(); }
   else if (cmd === 'group-play') { const field={albums:'album',artists:'artist',genres:'genre'}[S.settings.cat], list=sortTracks(S.tracks.filter(t=>t[field]===button.dataset.contextGroup)); if(list.length)playIds(ids(list),0); }
   else if (cmd === 'group-shuffle') { const field={albums:'album',artists:'artist',genres:'genre'}[S.settings.cat], list=ids(sortTracks(S.tracks.filter(t=>t[field]===button.dataset.contextGroup))); if(list.length){setMode('shuffle');playIds(list,Math.floor(Math.random()*list.length));} }
@@ -1153,7 +1278,7 @@ document.addEventListener('contextmenu', (e) => {
   if (playlistEl) {
     e.preventDefault(); const id=playlistEl.dataset.pl, custom=S.playlists.some(p=>p.id===id);
     const items=[{label:'Open playlist',cmd:'playlist-open',id},{label:'Play playlist',cmd:'playlist-play',id},{label:'Shuffle playlist',cmd:'playlist-shuffle',id}];
-    if(custom)items.push({label:'Rename playlist',cmd:'playlist-rename',id},{label:'Delete playlist',cmd:'playlist-delete',id});
+    if(custom)items.push({label:'Move to folder…',cmd:'playlist-move',id},{label:'Rename playlist',cmd:'playlist-rename',id},{label:'Delete playlist',cmd:'playlist-delete',id});
     showContextMenu(items,e.clientX,e.clientY); return;
   }
   const groupEl = e.target.closest('.card[data-act="group"]');
@@ -1163,6 +1288,35 @@ document.addEventListener('contextmenu', (e) => {
     const buttons=$$('#menu [data-context-cmd]'); buttons.forEach(b=>b.dataset.contextGroup=name); return;
   }
 });
+let queueDragIndex = null;
+function clearQueueDrag() {
+  $$('#queue .queue-item').forEach((row) => row.classList.remove('dragging', 'drag-over'));
+  queueDragIndex = null;
+}
+document.addEventListener('dragstart', (e) => {
+  const row = e.target.closest && e.target.closest('#queue .queue-item[data-i]');
+  if (!row || !e.target.closest('.queue-grip')) return;
+  queueDragIndex = Number(row.dataset.i);
+  row.classList.add('dragging');
+  if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(queueDragIndex)); }
+});
+document.addEventListener('dragover', (e) => {
+  const row = e.target.closest && e.target.closest('#queue .queue-item[data-i]');
+  if (queueDragIndex === null || !row) return;
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+  $$('#queue .queue-item.drag-over').forEach((item) => item.classList.remove('drag-over'));
+  row.classList.add('drag-over');
+});
+document.addEventListener('drop', (e) => {
+  const row = e.target.closest && e.target.closest('#queue .queue-item[data-i]');
+  if (queueDragIndex === null || !row) return;
+  e.preventDefault();
+  const from = queueDragIndex, to = Number(row.dataset.i);
+  clearQueueDrag();
+  if (moveQueueItem(from, to)) toast('Queue order updated');
+});
+document.addEventListener('dragend', clearQueueDrag);
 document.addEventListener('click', (e) => {
   if (e.target.closest('button')) uiClick();
   const contextButton = e.target.closest('#menu [data-context-cmd]');
@@ -1170,6 +1324,7 @@ document.addEventListener('click', (e) => {
   const mb = e.target.closest('#menu [data-m]');
   if (mb) { const id = $('#menu').dataset.id; $('#menu').classList.add('hidden'); MENU[mb.dataset.m](id); return; }
   if (!e.target.closest('#menu')) { $('#menu').classList.add('hidden'); delete $('#menu').dataset.contextMenu; }
+  if (e.target.closest('#queue .queue-grip')) return;
   const el = e.target.closest('[data-act]');
   if (el && ACT[el.dataset.act]) ACT[el.dataset.act](el.dataset, e);
 });
@@ -1237,6 +1392,11 @@ async function boot() {
   initAudio(); audio.playbackRate = S.settings.speed || 1; initVideoPlayer(); applyTheme(); applyWallpaper(); applyCustomFont(); syncKeepAwake();
   $('#nav').innerHTML = NAV.map(([p, n, ic]) => `<button class="navb" data-act="nav" data-page="${p}">${svg(ic, 22)}<span>${n}</span></button>`).join('');
   window.nyxen.onScanProgress((p) => { $('#sidefoot').textContent = `Scanning ${p.done} / ${p.total}...`; });
+  window.nyxen.onDuplicateProgress((p) => {
+    V.hashScanProgress = p;
+    const status = $('#hash-scan-status');
+    if (status && V.hashScanBusy) status.textContent = p.total ? `Hashing ${p.done} of ${p.total} candidate files…` : 'Preparing your library for a safe scan…';
+  });
   window.nyxen.onCommand((c) => { if (c === 'toggle') toggle(); else if (c === 'next') next(true); else if (c === 'prev') prev(); else if (c === 'stop') audio.pause(); });
   const lt = S.last.id && track(S.last.id);
   if (lt) {

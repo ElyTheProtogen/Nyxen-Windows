@@ -22,6 +22,7 @@ const fsp = fs.promises;
 const crypto = require('crypto');
 const { pathToFileURL } = require('url');
 const { Readable } = require('stream');
+const { hashFile, groupCandidatesBySize, groupHashMatches } = require('./src/duplicate-utils');
 
 // nyxen:// serves covers, audio and video files with CORS headers.
 protocol.registerSchemesAsPrivileged([
@@ -316,6 +317,75 @@ async function scan(targets, known) {
   };
 }
 
+async function findExactDuplicates(entries) {
+  if (!Array.isArray(entries)) throw new Error('A track list is required for duplicate detection.');
+  if (entries.length > 20000) throw new Error('Library is too large for one duplicate scan (20,000 tracks maximum).');
+
+  const unique = new Map();
+  let unavailableFiles = 0;
+  for (const entry of entries) {
+    if (!entry || typeof entry.id !== 'string' || !/^[a-f0-9]{12}$/i.test(entry.id) ||
+        typeof entry.path !== 'string' || !entry.path) {
+      unavailableFiles++;
+      continue;
+    }
+
+    let filePath;
+    try { filePath = path.resolve(entry.path); } catch { unavailableFiles++; continue; }
+    const key = mediaPathKey(filePath);
+    if (!allowedMediaPaths.has(key) || idFor(filePath) !== entry.id) {
+      unavailableFiles++;
+      continue;
+    }
+    if (unique.has(key)) continue;
+
+    const stat = await fsp.stat(filePath).catch(() => null);
+    if (!stat || !stat.isFile()) {
+      unavailableFiles++;
+      continue;
+    }
+    unique.set(key, { id: entry.id, path: filePath, size: stat.size, mtimeMs: stat.mtimeMs });
+  }
+
+  // Files with different byte lengths cannot be identical. Hash only same-size
+  // candidates to avoid reading every song in a large library unnecessarily.
+  const candidates = groupCandidatesBySize([...unique.values()]).flat();
+  const hashed = [];
+  let cursor = 0;
+  let done = 0;
+  const worker = async () => {
+    while (cursor < candidates.length) {
+      const item = candidates[cursor++];
+      try {
+        const hash = await hashFile(item.path);
+        const after = await fsp.stat(item.path);
+        // Ignore a file that changed while it was being read.
+        if (after.isFile() && after.size === item.size && after.mtimeMs === item.mtimeMs) {
+          hashed.push({ id: item.id, size: item.size, hash });
+        } else {
+          unavailableFiles++;
+        }
+      } catch {
+        unavailableFiles++;
+      } finally {
+        done++;
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('duplicates:progress', { done, total: candidates.length });
+        }
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(3, candidates.length) }, worker));
+
+  return {
+    groups: groupHashMatches(hashed),
+    libraryTracks: entries.length,
+    candidateFiles: candidates.length,
+    checkedFiles: hashed.length,
+    unavailableFiles
+  };
+}
+
 // VIDEO FILE SCANNING
 
 async function walkVideos(dir, out) {
@@ -402,6 +472,7 @@ ipcMain.handle('state:save', async (_e, data) => {
   });
   stateWriteChain = write;
   await write;
+  rememberStateMedia(data);
   return true;
 });
 
@@ -479,6 +550,8 @@ ipcMain.handle('scan:videos', (_e, targets, known) => {
   const safeKnown = Array.isArray(known) ? known.filter((item) => typeof item === 'string') : [];
   return scanVideos(safeTargets, safeKnown);
 });
+
+ipcMain.handle('library:find-exact-duplicates', (_e, entries) => findExactDuplicates(entries));
 
 // OFFLINE AUDIO IMPORT
 
