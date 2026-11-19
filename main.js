@@ -537,6 +537,48 @@ ipcMain.handle('dialog:video-files', async () => {
   return r.canceled ? [] : r.filePaths;
 });
 
+// MISSING AUDIO FILE CHECKS AND SAFE RELINKING
+
+async function findMissingFiles(entries) {
+  if (!Array.isArray(entries)) throw new Error('A track list is required.');
+  if (entries.length > 20000) throw new Error('Library is too large for one missing-file scan (20,000 tracks maximum).');
+
+  const seen = new Set();
+  const missingIds = [];
+  let checked = 0;
+  let inaccessible = 0;
+  let unverified = 0;
+
+  for (const entry of entries) {
+    if (!entry || typeof entry.id !== 'string' || !/^[a-f0-9]{12}$/i.test(entry.id) ||
+        typeof entry.path !== 'string' || !entry.path.trim()) {
+      unverified++;
+      continue;
+    }
+
+    let filePath;
+    try { filePath = path.resolve(entry.path); } catch { unverified++; continue; }
+    const key = mediaPathKey(filePath);
+    if (idFor(filePath) !== entry.id || !allowedMediaPaths.has(key)) {
+      unverified++;
+      continue;
+    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    checked++;
+
+    try {
+      const stat = await fsp.stat(filePath);
+      if (!stat.isFile()) inaccessible++;
+    } catch (error) {
+      if (error && ['ENOENT', 'ENOTDIR'].includes(error.code)) missingIds.push(entry.id);
+      else inaccessible++;
+    }
+  }
+
+  return { missingIds, checked, inaccessible, unverified };
+}
+
 // AUDIO AND VIDEO SCAN HANDLERS
 
 ipcMain.handle('scan', (_e, targets, known) => {
@@ -552,6 +594,53 @@ ipcMain.handle('scan:videos', (_e, targets, known) => {
 });
 
 ipcMain.handle('library:find-exact-duplicates', (_e, entries) => findExactDuplicates(entries));
+
+ipcMain.handle('library:find-missing-files', (_e, entries) => findMissingFiles(entries));
+
+ipcMain.handle('library:relink-track', async (_e, entry, knownIds) => {
+  if (!entry || typeof entry.id !== 'string' || !/^[a-f0-9]{12}$/i.test(entry.id) ||
+      typeof entry.path !== 'string' || !entry.path.trim()) return { status: 'invalid' };
+
+  const oldPath = path.resolve(entry.path);
+  if (idFor(oldPath) !== entry.id || !allowedMediaPaths.has(mediaPathKey(oldPath))) {
+    return { status: 'unverified' };
+  }
+
+  const result = await dialog.showOpenDialog(win, {
+    defaultPath: path.dirname(oldPath),
+    properties: ['openFile'],
+    filters: [{
+      name: 'Audio',
+      extensions: ['mp3', 'm4a', 'aac', 'wav', 'ogg', 'opus', 'flac']
+    }]
+  });
+  if (result.canceled || !result.filePaths[0]) return { status: 'cancelled' };
+
+  const newPath = path.resolve(result.filePaths[0]);
+  if (!AUDIO_EXT.has(path.extname(newPath).toLowerCase())) return { status: 'unsupported' };
+  const stat = await fsp.stat(newPath).catch(() => null);
+  if (!stat || !stat.isFile()) return { status: 'unavailable' };
+
+  const newId = idFor(newPath);
+  const known = new Set(Array.isArray(knownIds) ? knownIds.filter((id) => typeof id === 'string' && /^[a-f0-9]{12}$/i.test(id)) : []);
+  if (newId !== entry.id && known.has(newId)) return { status: 'duplicate' };
+
+  const oldCover = path.join(coverDir(), entry.id + '.jpg');
+  const newCover = path.join(coverDir(), newId + '.jpg');
+  let coverAvailable = false;
+  try { await fsp.access(newCover); coverAvailable = true; } catch {}
+  if (!coverAvailable && newId !== entry.id) {
+    try {
+      await fsp.copyFile(oldCover, newCover, fs.constants.COPYFILE_EXCL);
+      coverAvailable = true;
+    } catch {}
+  }
+
+  // Only the explicitly selected path is added to Nyxen's media allowlist.
+  // The audio file itself is never copied, moved, renamed or modified.
+  allowedMediaPaths.add(mediaPathKey(newPath));
+  return { status: 'ok', id: newId, path: newPath, coverAvailable };
+});
 
 // OFFLINE AUDIO IMPORT
 
