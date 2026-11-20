@@ -49,6 +49,7 @@ const VIDEO_EXT = new Set([
 
 let win = null;
 const allowedMediaPaths = new Set();
+const pendingFolderRelinks = new Map();
 const mediaPathKey = (value) => path.resolve(value).toLowerCase();
 function rememberStateMedia(state) {
   for (const item of [...(Array.isArray(state?.tracks) ? state.tracks : []), ...(Array.isArray(state?.videos) ? state.videos : [])]) {
@@ -537,6 +538,286 @@ ipcMain.handle('dialog:video-files', async () => {
   return r.canceled ? [] : r.filePaths;
 });
 
+// MISSING AUDIO FILE CHECKS AND SAFE RELINKING
+
+async function findMissingFiles(entries) {
+  if (!Array.isArray(entries)) throw new Error('A track list is required.');
+  if (entries.length > 20000) throw new Error('Library is too large for one missing-file scan (20,000 tracks maximum).');
+
+  const seen = new Set();
+  const missingIds = [];
+  let checked = 0;
+  let inaccessible = 0;
+  let unverified = 0;
+
+  for (const entry of entries) {
+    if (!entry || typeof entry.id !== 'string' || !/^[a-f0-9]{12}$/i.test(entry.id) ||
+        typeof entry.path !== 'string' || !entry.path.trim()) {
+      unverified++;
+      continue;
+    }
+
+    let filePath;
+    try { filePath = path.resolve(entry.path); } catch { unverified++; continue; }
+    const key = mediaPathKey(filePath);
+    if (idFor(filePath) !== entry.id || !allowedMediaPaths.has(key)) {
+      unverified++;
+      continue;
+    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    checked++;
+
+    try {
+      const stat = await fsp.stat(filePath);
+      if (!stat.isFile()) inaccessible++;
+    } catch (error) {
+      if (error && ['ENOENT', 'ENOTDIR'].includes(error.code)) missingIds.push(entry.id);
+      else inaccessible++;
+    }
+  }
+
+  return { missingIds, checked, inaccessible, unverified };
+}
+
+function isWithinPath(root, target) {
+  const relative = path.relative(root, target);
+  return relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith('..' + path.sep));
+}
+
+function commonParentDirectory(paths) {
+  if (!Array.isArray(paths) || !paths.length) return null;
+  const directories = paths.map((value) => path.dirname(path.resolve(value)));
+  const volumeRoot = path.parse(directories[0]).root.toLowerCase();
+  if (directories.some((value) => path.parse(value).root.toLowerCase() !== volumeRoot)) return null;
+
+  let common = directories[0];
+  for (const directory of directories.slice(1)) {
+    while (!isWithinPath(common, directory)) {
+      const parent = path.dirname(common);
+      if (parent === common) return null;
+      common = parent;
+    }
+  }
+  if (path.resolve(common).toLowerCase() === volumeRoot) return null;
+  return common;
+}
+
+async function previewFolderRelink(entries, knownIds) {
+  if (!Array.isArray(entries)) return { status: 'invalid' };
+  if (entries.length > 20000) return { status: 'too-large' };
+
+  const verified = [];
+  const seenPaths = new Set();
+  const seenIds = new Set();
+  let stale = 0;
+  let unverified = 0;
+  let inaccessible = 0;
+
+  for (const entry of entries) {
+    if (!entry || typeof entry.id !== 'string' || !/^[a-f0-9]{12}$/i.test(entry.id) ||
+        typeof entry.path !== 'string' || !entry.path.trim()) {
+      unverified++;
+      continue;
+    }
+
+    const oldPath = path.resolve(entry.path);
+    const key = mediaPathKey(oldPath);
+    if (idFor(oldPath) !== entry.id || !allowedMediaPaths.has(key) || seenIds.has(entry.id)) {
+      unverified++;
+      continue;
+    }
+    if (seenPaths.has(key)) continue;
+    seenPaths.add(key);
+    seenIds.add(entry.id);
+
+    try {
+      const stat = await fsp.stat(oldPath);
+      if (stat.isFile()) stale++;
+      else inaccessible++;
+      continue;
+    } catch (error) {
+      if (!error || !['ENOENT', 'ENOTDIR'].includes(error.code)) {
+        inaccessible++;
+        continue;
+      }
+    }
+    verified.push({ oldId: entry.id, oldPath });
+  }
+
+  if (!verified.length) return { status: 'no-missing', stale, unverified, inaccessible };
+  const sourceRoot = commonParentDirectory(verified.map((entry) => entry.oldPath));
+  if (!sourceRoot) return { status: 'no-common-root', stale, unverified, inaccessible };
+
+  const selection = await dialog.showOpenDialog(win, {
+    title: 'Choose the moved music folder',
+    properties: ['openDirectory']
+  });
+  if (selection.canceled || !selection.filePaths[0]) return { status: 'cancelled' };
+
+  const destinationRoot = path.resolve(selection.filePaths[0]);
+  const rootStat = await fsp.stat(destinationRoot).catch(() => null);
+  if (!rootStat || !rootStat.isDirectory()) return { status: 'invalid-folder' };
+
+  const oldIds = new Set(verified.map((entry) => entry.oldId));
+  const known = new Set(Array.isArray(knownIds)
+    ? knownIds.filter((id) => typeof id === 'string' && /^[a-f0-9]{12}$/i.test(id) && !oldIds.has(id))
+    : []);
+  const newIds = new Set();
+  const newPaths = new Set();
+  const matches = [];
+  let unmatched = 0;
+  let conflicts = 0;
+  let destinationInaccessible = 0;
+
+  for (const entry of verified) {
+    const relativePath = path.relative(sourceRoot, entry.oldPath);
+    if (!relativePath || relativePath === '..' || relativePath.startsWith('..' + path.sep) || path.isAbsolute(relativePath)) {
+      unmatched++;
+      continue;
+    }
+
+    const newPath = path.resolve(destinationRoot, relativePath);
+    if (!isWithinPath(destinationRoot, newPath) || !AUDIO_EXT.has(path.extname(newPath).toLowerCase())) {
+      conflicts++;
+      continue;
+    }
+
+    let stat;
+    try { stat = await fsp.stat(newPath); }
+    catch (error) {
+      if (error && ['ENOENT', 'ENOTDIR'].includes(error.code)) unmatched++;
+      else destinationInaccessible++;
+      continue;
+    }
+    if (!stat.isFile()) { destinationInaccessible++; continue; }
+
+    const newId = idFor(newPath);
+    const newKey = mediaPathKey(newPath);
+    if (known.has(newId) || oldIds.has(newId) || newIds.has(newId) || newPaths.has(newKey)) {
+      conflicts++;
+      continue;
+    }
+
+    newIds.add(newId);
+    newPaths.add(newKey);
+    matches.push({ oldId: entry.oldId, oldPath: entry.oldPath, newId, newPath, relativePath });
+  }
+
+  if (!matches.length) {
+    return {
+      status: 'no-matches',
+      sourceRoot,
+      destinationRoot,
+      stale,
+      unverified,
+      inaccessible: inaccessible + destinationInaccessible,
+      unmatched,
+      conflicts
+    };
+  }
+
+  pendingFolderRelinks.clear();
+  const token = crypto.randomBytes(16).toString('hex');
+  pendingFolderRelinks.set(token, { sourceRoot, destinationRoot, matches });
+  return {
+    status: 'preview',
+    token,
+    sourceRoot,
+    destinationRoot,
+    matches: matches.length,
+    stale,
+    unverified,
+    inaccessible: inaccessible + destinationInaccessible,
+    unmatched,
+    conflicts
+  };
+}
+
+async function commitFolderRelink(token, knownIds) {
+  if (typeof token !== 'string' || !/^[a-f0-9]{32}$/.test(token)) return { status: 'expired' };
+  const plan = pendingFolderRelinks.get(token);
+  if (!plan) return { status: 'expired' };
+  pendingFolderRelinks.delete(token);
+
+  const oldIds = new Set(plan.matches.map((entry) => entry.oldId));
+  const known = new Set(Array.isArray(knownIds)
+    ? knownIds.filter((id) => typeof id === 'string' && /^[a-f0-9]{12}$/i.test(id) && !oldIds.has(id))
+    : []);
+  const newIds = new Set();
+  const newPaths = new Set();
+  const matches = [];
+  let stale = 0;
+  let inaccessible = 0;
+  let conflicts = 0;
+
+  for (const entry of plan.matches) {
+    const oldPath = path.resolve(entry.oldPath);
+    const newPath = path.resolve(entry.newPath);
+    const relativePath = path.relative(plan.sourceRoot, oldPath);
+    if (idFor(oldPath) !== entry.oldId || !allowedMediaPaths.has(mediaPathKey(oldPath)) ||
+        relativePath.toLowerCase() !== entry.relativePath.toLowerCase() ||
+        !isWithinPath(plan.destinationRoot, newPath) ||
+        path.resolve(plan.destinationRoot, relativePath).toLowerCase() !== newPath.toLowerCase() ||
+        !AUDIO_EXT.has(path.extname(newPath).toLowerCase())) {
+      conflicts++;
+      continue;
+    }
+
+    try {
+      const oldStat = await fsp.stat(oldPath);
+      if (oldStat.isFile()) stale++;
+      else inaccessible++;
+      continue;
+    } catch (error) {
+      if (!error || !['ENOENT', 'ENOTDIR'].includes(error.code)) {
+        inaccessible++;
+        continue;
+      }
+    }
+
+    let newStat;
+    try { newStat = await fsp.stat(newPath); }
+    catch (error) {
+      if (error && ['ENOENT', 'ENOTDIR'].includes(error.code)) stale++;
+      else inaccessible++;
+      continue;
+    }
+    if (!newStat.isFile()) { inaccessible++; continue; }
+
+    const newId = idFor(newPath);
+    const newKey = mediaPathKey(newPath);
+    if (newId !== entry.newId || known.has(newId) || oldIds.has(newId) ||
+        newIds.has(newId) || newPaths.has(newKey)) {
+      conflicts++;
+      continue;
+    }
+    newIds.add(newId);
+    newPaths.add(newKey);
+    matches.push({ oldId: entry.oldId, newId, path: newPath });
+  }
+
+  if (!matches.length) return { status: 'no-valid-matches', stale, inaccessible, conflicts };
+
+  const committed = [];
+  for (const match of matches) {
+    const oldCover = path.join(coverDir(), match.oldId + '.jpg');
+    const newCover = path.join(coverDir(), match.newId + '.jpg');
+    let coverAvailable = false;
+    try { await fsp.access(newCover); coverAvailable = true; } catch {}
+    if (!coverAvailable && match.newId !== match.oldId) {
+      try {
+        await fsp.copyFile(oldCover, newCover, fs.constants.COPYFILE_EXCL);
+        coverAvailable = true;
+      } catch {}
+    }
+    allowedMediaPaths.add(mediaPathKey(match.path));
+    committed.push({ ...match, coverAvailable });
+  }
+
+  return { status: 'ok', matches: committed, stale, inaccessible, conflicts };
+}
+
 // AUDIO AND VIDEO SCAN HANDLERS
 
 ipcMain.handle('scan', (_e, targets, known) => {
@@ -552,6 +833,60 @@ ipcMain.handle('scan:videos', (_e, targets, known) => {
 });
 
 ipcMain.handle('library:find-exact-duplicates', (_e, entries) => findExactDuplicates(entries));
+
+ipcMain.handle('library:find-missing-files', (_e, entries) => findMissingFiles(entries));
+
+ipcMain.handle('library:relink-track', async (_e, entry, knownIds) => {
+  if (!entry || typeof entry.id !== 'string' || !/^[a-f0-9]{12}$/i.test(entry.id) ||
+      typeof entry.path !== 'string' || !entry.path.trim()) return { status: 'invalid' };
+
+  const oldPath = path.resolve(entry.path);
+  if (idFor(oldPath) !== entry.id || !allowedMediaPaths.has(mediaPathKey(oldPath))) {
+    return { status: 'unverified' };
+  }
+
+  const result = await dialog.showOpenDialog(win, {
+    defaultPath: path.dirname(oldPath),
+    properties: ['openFile'],
+    filters: [{
+      name: 'Audio',
+      extensions: ['mp3', 'm4a', 'aac', 'wav', 'ogg', 'opus', 'flac']
+    }]
+  });
+  if (result.canceled || !result.filePaths[0]) return { status: 'cancelled' };
+
+  const newPath = path.resolve(result.filePaths[0]);
+  if (!AUDIO_EXT.has(path.extname(newPath).toLowerCase())) return { status: 'unsupported' };
+  const stat = await fsp.stat(newPath).catch(() => null);
+  if (!stat || !stat.isFile()) return { status: 'unavailable' };
+
+  const newId = idFor(newPath);
+  const known = new Set(Array.isArray(knownIds) ? knownIds.filter((id) => typeof id === 'string' && /^[a-f0-9]{12}$/i.test(id)) : []);
+  if (newId !== entry.id && known.has(newId)) return { status: 'duplicate' };
+
+  const oldCover = path.join(coverDir(), entry.id + '.jpg');
+  const newCover = path.join(coverDir(), newId + '.jpg');
+  let coverAvailable = false;
+  try { await fsp.access(newCover); coverAvailable = true; } catch {}
+  if (!coverAvailable && newId !== entry.id) {
+    try {
+      await fsp.copyFile(oldCover, newCover, fs.constants.COPYFILE_EXCL);
+      coverAvailable = true;
+    } catch {}
+  }
+
+  // Only the explicitly selected path is added to Nyxen's media allowlist.
+  // The audio file itself is never copied, moved, renamed or modified.
+  allowedMediaPaths.add(mediaPathKey(newPath));
+  return { status: 'ok', id: newId, path: newPath, coverAvailable };
+});
+
+ipcMain.handle('library:preview-folder-relink', (_e, entries, knownIds) => previewFolderRelink(entries, knownIds));
+ipcMain.handle('library:commit-folder-relink', (_e, token, knownIds) => commitFolderRelink(token, knownIds));
+ipcMain.handle('library:cancel-folder-relink', (_e, token) => {
+  if (typeof token !== 'string') return false;
+  return pendingFolderRelinks.delete(token);
+});
 
 // OFFLINE AUDIO IMPORT
 

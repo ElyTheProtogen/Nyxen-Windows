@@ -12,6 +12,11 @@ contextBridge.exposeInMainWorld('nyxen', {
   scan: (targets, known) =>
     ipcRenderer.invoke('scan', targets, known),
   findExactDuplicates: (tracks) => ipcRenderer.invoke('library:find-exact-duplicates', tracks),
+  findMissingFiles: (tracks) => ipcRenderer.invoke('library:find-missing-files', tracks),
+  relinkTrack: (track, knownIds) => ipcRenderer.invoke('library:relink-track', track, knownIds),
+  previewFolderRelink: (tracks, knownIds) => ipcRenderer.invoke('library:preview-folder-relink', tracks, knownIds),
+  commitFolderRelink: (token, knownIds) => ipcRenderer.invoke('library:commit-folder-relink', token, knownIds),
+  cancelFolderRelink: (token) => ipcRenderer.invoke('library:cancel-folder-relink', token),
 
   // Video file management
   pickVideoFiles: () =>
