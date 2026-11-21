@@ -38,7 +38,7 @@
 
   function parseTrackQuery(query) {
     const source = String(query ?? '').trim();
-    const tokens = source.match(/(?:-)?[a-z][a-z0-9_-]*:"[^"]*"|(?:-)?[a-z][a-z0-9_-]*:\\S+|-"[^"]*"|-[^\\s]+|"[^"]*"|\\S+/gi) || [];
+    const tokens = source.match(/(?:-)?[a-z][a-z0-9_-]*:"[^"]*"|(?:-)?[a-z][a-z0-9_-]*:\S+|-"[^"]*"|-[^\s]+|"[^"]*"|\S+/gi) || [];
     return tokens.map((raw) => {
       const negative = raw.startsWith('-');
       const body = negative ? raw.slice(1) : raw;
