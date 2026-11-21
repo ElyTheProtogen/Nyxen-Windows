@@ -686,7 +686,7 @@ function renderQueue() {
   const q = $('#queue'); if (q.classList.contains('off')) return;
   const entries = queueMatches();
   const currentHidden = Q.i >= 0 && !entries.some((entry) => entry.index === Q.i);
-  q.innerHTML = `<div class="split"><h2 class="grow" style="margin:0">Queue</h2><button class="icon" data-act="queue-toggle">${svg('close', 22)}</button></div><div class="sub" style="margin-bottom:10px">${Q.ids.length} songs &middot; ${MODE_NAME[S.settings.mode]}</div><div class="toolbar"><input id="queue-search" class="field" style="flex:1;min-width:0" aria-label="Search current queue" placeholder='Search queue: artist:name, "phrase", -term' value="${esc(queueQuery)}" autocomplete="off">${queueQuery ? '<button class="chip" data-act="queue-search-clear">Clear</button>' : ''}</div><div class="sub" id="queue-search-count" style="margin-bottom:8px">${entries.length} of ${Q.ids.length} queued tracks${currentHidden ? ' · Current track hidden by filter' : ''}</div><div class="sub queue-hint">Drag the grip to reorder, or use the arrow controls.</div><div id="queue-results">${queueRows(entries)}</div>`;
+  q.innerHTML = `<div class="split"><h2 class="grow" style="margin:0">Queue</h2><button class="icon" data-act="queue-toggle">${svg('close', 22)}</button></div><div class="sub" style="margin-bottom:10px">${Q.ids.length} songs &middot; ${MODE_NAME[S.settings.mode]}</div><div class="toolbar"><input id="queue-search" class="field" style="flex:1;min-width:0" aria-label="Search current queue" placeholder='Search queue: artist:name, "phrase", -term' value="${esc(queueQuery)}" autocomplete="off"><button class="chip" data-act="queue-search-clear" ${queueQuery ? '' : 'disabled'}>Clear</button></div><div class="sub" id="queue-search-count" style="margin-bottom:8px">${entries.length} of ${Q.ids.length} queued tracks${currentHidden ? ' · Current track hidden by filter' : ''}</div><div class="sub queue-hint">Drag the grip to reorder, or use the arrow controls.</div><div id="queue-results">${queueRows(entries)}</div>`;
 }
 let idle = 0, vizAccent = '#b14bff', vizAccentT = 0; const vdata = new Uint8Array(256);
 function vizLoop() {
@@ -1362,6 +1362,8 @@ document.addEventListener('input', (e) => {
     if (count) count.textContent = `${entries.length} of ${Q.ids.length} queued tracks${currentHidden ? ' · Current track hidden by filter' : ''}`;
     const results = $('#queue-results');
     if (results) results.innerHTML = queueRows(entries);
+    const clear = $('[data-act="queue-search-clear"]');
+    if (clear) clear.disabled = !queueQuery;
   }
   else if (t.id === 'sortsel') { S.settings.sort = t.value; save(); render(); }
   else if (t.dataset && t.dataset.band !== undefined) { const i = +t.dataset.band; S.settings.gains[i] = +t.value; S.settings.preset = 'Custom'; t.previousElementSibling.textContent = (+t.value > 0 ? '+' : '') + t.value; applyFx(); save(); }
