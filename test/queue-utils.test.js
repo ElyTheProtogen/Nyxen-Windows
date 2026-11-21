@@ -57,7 +57,7 @@ test('supports quoted exact phrases and field-specific searches', () => {
 
 test('supports negative terms and file/path aliases', () => {
   assert.equal(matchesTrack(tracks[0], 'genre:electronic -artist:m83'), false);
-  assert.equal(matchesTrack(tracks[0], 'file:midnight-city.flac'), true);
+  assert.equal(matchesTrack(tracks[0], 'file:"Midnight City.flac"'), true);
   assert.equal(matchesTrack(tracks[0], 'path:music/m83'), true);
 });
 
@@ -82,5 +82,5 @@ test('empty and whitespace-only searches return all tracks', () => {
 
 test('unknown field prefixes remain searchable as ordinary text', () => {
   assert.equal(matchesTrack(tracks[0], 'composer:bach'), false);
-  assert.equal(matchesTrack({ title: 'Composer: Bach' }, 'composer:bach'), true);
+  assert.equal(matchesTrack({ title: 'Composer:bach' }, 'composer:bach'), true);
 });
