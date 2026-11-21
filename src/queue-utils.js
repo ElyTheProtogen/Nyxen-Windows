@@ -24,5 +24,58 @@
     return { ids, index, moved: true };
   }
 
-  return { moveItem };
+  const SEARCH_FIELDS = {
+    title: 'title',
+    artist: 'artist',
+    album: 'album',
+    albumartist: 'albumArtist',
+    'album-artist': 'albumArtist',
+    genre: 'genre',
+    path: 'path',
+    file: 'path',
+    filename: 'path'
+  };
+
+  function parseTrackQuery(query) {
+    const source = String(query ?? '').trim();
+    const tokens = source.match(/(?:-)?[a-z][a-z0-9_-]*:"[^"]*"|(?:-)?[a-z][a-z0-9_-]*:\S+|-"[^"]*"|-[^\s]+|"[^"]*"|\S+/gi) || [];
+    return tokens.map((raw) => {
+      const negative = raw.startsWith('-');
+      const body = negative ? raw.slice(1) : raw;
+      const match = body.match(/^([a-z][a-z0-9_-]*):/i);
+      const fieldName = match ? match[1].toLowerCase() : '';
+      const field = SEARCH_FIELDS[fieldName] || null;
+      const rawValue = field ? body.slice(match[0].length) : body;
+      const value = rawValue.replace(/^"|"$/g, '').trim().toLowerCase();
+      return value ? { negative, field, value } : null;
+    }).filter(Boolean);
+  }
+
+  function matchesTrack(track, query) {
+    if (!track || typeof track !== 'object') return false;
+    const tokens = parseTrackQuery(query);
+    if (!tokens.length) return true;
+    const values = {
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+      albumArtist: track.albumArtist || track.albumartist || track.artist,
+      genre: track.genre,
+      path: track.path
+    };
+    const allFields = Object.values(values).filter((value) => value !== undefined && value !== null).join(' ').toLowerCase();
+    return tokens.every(({ negative, field, value }) => {
+      const haystack = field
+        ? String(values[field] ?? '').toLowerCase()
+        : allFields;
+      const found = haystack.includes(value);
+      return negative ? !found : found;
+    });
+  }
+
+  function filterTracks(tracks, query) {
+    return Array.isArray(tracks) ? tracks.filter((track) => matchesTrack(track, query)) : [];
+  }
+
+  return { moveItem, parseTrackQuery, matchesTrack, filterTracks };
 });

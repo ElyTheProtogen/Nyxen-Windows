@@ -673,10 +673,20 @@ function updatePlayerUI() {
   renderBar(); if (!$('#np').classList.contains('off')) renderNP();
   document.title = cur ? `${cur.title} · NyxenPlayer` : 'NyxenPlayer'; updateProgress();
 }
+let queueQuery = '';
+function queueMatches() {
+  return Q.ids.map((id, index) => ({ track: track(id), index }))
+    .filter((entry) => entry.track && window.NyxenQueueUtils.matchesTrack(entry.track, queueQuery));
+}
+function queueRows(entries) {
+  if (!entries.length) return `<div class="sub" style="padding:16px 4px">${Q.ids.length ? 'No queued tracks match this search.' : 'Your queue is empty.'}</div>`;
+  return entries.map(({ track: t, index: i }) => `<div class="trow queue-item ${i === Q.i ? 'cur' : ''}" data-act="q-jump" data-id="${t.id}" data-i="${i}"><span class="queue-grip" draggable="true" title="Drag to reorder" aria-label="Drag to reorder">⠿</span>${art(t, 'sm')}<div class="tmeta"><b>${esc(t.title)}</b><span>${esc(t.artist)}</span></div><button class="icon queue-move" data-act="q-up" data-i="${i}" title="Move up" aria-label="Move up" ${i === 0 ? 'disabled' : ''}>↑</button><button class="icon queue-move" data-act="q-down" data-i="${i}" title="Move down" aria-label="Move down" ${i === Q.ids.length - 1 ? 'disabled' : ''}>↓</button><button class="icon" data-act="q-rm" data-i="${i}" title="Remove from queue">${svg('close', 18)}</button></div>`).join('');
+}
 function renderQueue() {
   const q = $('#queue'); if (q.classList.contains('off')) return;
-  q.innerHTML = `<div class="split"><h2 class="grow" style="margin:0">Queue</h2><button class="icon" data-act="queue-toggle">${svg('close', 22)}</button></div><div class="sub" style="margin-bottom:10px">${Q.ids.length} songs &middot; ${MODE_NAME[S.settings.mode]}</div><div class="sub queue-hint">Drag the grip to reorder, or use the arrow controls.</div>` +
-    Q.ids.map((id, i) => { const t = track(id); return t ? `<div class="trow queue-item ${i === Q.i ? 'cur' : ''}" data-act="q-jump" data-id="${t.id}" data-i="${i}"><span class="queue-grip" draggable="true" title="Drag to reorder" aria-label="Drag to reorder">⠿</span>${art(t, 'sm')}<div class="tmeta"><b>${esc(t.title)}</b><span>${esc(t.artist)}</span></div><button class="icon queue-move" data-act="q-up" data-i="${i}" title="Move up" aria-label="Move up" ${i === 0 ? 'disabled' : ''}>↑</button><button class="icon queue-move" data-act="q-down" data-i="${i}" title="Move down" aria-label="Move down" ${i === Q.ids.length - 1 ? 'disabled' : ''}>↓</button><button class="icon" data-act="q-rm" data-i="${i}" title="Remove from queue">${svg('close', 18)}</button></div>` : ''; }).join('');
+  const entries = queueMatches();
+  const currentHidden = Q.i >= 0 && !entries.some((entry) => entry.index === Q.i);
+  q.innerHTML = `<div class="split"><h2 class="grow" style="margin:0">Queue</h2><button class="icon" data-act="queue-toggle">${svg('close', 22)}</button></div><div class="sub" style="margin-bottom:10px">${Q.ids.length} songs &middot; ${MODE_NAME[S.settings.mode]}</div><div class="toolbar"><input id="queue-search" class="field" style="flex:1;min-width:0" aria-label="Search current queue" placeholder='Search queue: artist:name, "phrase", -term' value="${esc(queueQuery)}" autocomplete="off"><button class="chip" data-act="queue-search-clear" ${queueQuery ? '' : 'disabled'}>Clear</button></div><div class="sub" id="queue-search-count" style="margin-bottom:8px">${entries.length} of ${Q.ids.length} queued tracks${currentHidden ? ' · Current track hidden by filter' : ''}</div><div class="sub queue-hint">Drag the grip to reorder, or use the arrow controls.</div><div id="queue-results">${queueRows(entries)}</div>`;
 }
 let idle = 0, vizAccent = '#b14bff', vizAccentT = 0; const vdata = new Uint8Array(256);
 function vizLoop() {
@@ -1119,6 +1129,7 @@ const ACT = {
   'np-open': () => { if (!cur) return; $('#np').classList.remove('off'); renderNP(); updateProgress(); },
   'np-close': () => $('#np').classList.add('off'),
   'queue-toggle': () => { const q = $('#queue'); q.classList.toggle('off'); renderQueue(); },
+  'queue-search-clear': () => { queueQuery = ''; renderQueue(); $('#queue-search')?.focus(); },
   'q-jump': (d) => { Q.i = +d.i; loadCurrent(true); },
   'q-up': (d) => moveQueueItem(+d.i, +d.i - 1),
   'q-down': (d) => moveQueueItem(+d.i, +d.i + 1),
@@ -1343,6 +1354,17 @@ document.addEventListener('pointerdown', (e) => {
 document.addEventListener('input', (e) => {
   const t = e.target; if (t.type === 'range') setP(t);
   if (t.id === 'q') { V.q = t.value; $('#results').innerHTML = searchResults(); }
+  else if (t.id === 'queue-search') {
+    queueQuery = t.value;
+    const entries = queueMatches();
+    const currentHidden = Q.i >= 0 && !entries.some((entry) => entry.index === Q.i);
+    const count = $('#queue-search-count');
+    if (count) count.textContent = `${entries.length} of ${Q.ids.length} queued tracks${currentHidden ? ' · Current track hidden by filter' : ''}`;
+    const results = $('#queue-results');
+    if (results) results.innerHTML = queueRows(entries);
+    const clear = $('[data-act="queue-search-clear"]');
+    if (clear) clear.disabled = !queueQuery;
+  }
   else if (t.id === 'sortsel') { S.settings.sort = t.value; save(); render(); }
   else if (t.dataset && t.dataset.band !== undefined) { const i = +t.dataset.band; S.settings.gains[i] = +t.value; S.settings.preset = 'Custom'; t.previousElementSibling.textContent = (+t.value > 0 ? '+' : '') + t.value; applyFx(); save(); }
   else if (t.id === 'pre') { S.settings.pre = +t.value; $('#pre-v').textContent = t.value + ' dB'; applyFx(); save(); }
