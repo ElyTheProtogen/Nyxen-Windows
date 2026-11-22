@@ -473,8 +473,13 @@ function pageLibrary() {
   h += '</div>';
   if (!S.tracks.length) return h + emptyState('Your library is empty', 'Add a folder with your music to get started.', 'Import a folder', 'import-folder') + '</div>';
   if (V.group) {
-    const ts = groupTracks(), k = reg(ids(ts));
-    return h + `<div class="split" style="margin:12px 0"><button class="chip" data-act="back">&larr; Back</button><div class="grow"><h2 style="margin:0">${esc(V.group.name)}</h2><div class="sub">${ts.length} songs</div></div><button class="btn" data-act="play-group">${svg('play', 18)} Play</button><button class="btn ghost" data-act="shuffle-group">${svg('shuffle', 18)} Shuffle</button></div>${ts.map((t, i) => trow(t, k, i)).join('')}</div>`;
+    const ts = groupTracks();
+    const key = contextSearchKey('group', V.group.cat, V.group.name);
+    setContextSearchOwner(key);
+    const entries = window.NyxenQueueUtils.filterEntries(ts, contextSearchQuery);
+    const rows = contextGroupRows(entries);
+    const label = { albums: 'album', artists: 'artist', genres: 'genre' }[V.group.cat] || 'group';
+    return h + `<div class="split" style="margin:12px 0"><button class="chip" data-act="back">&larr; Back</button><div class="grow"><h2 style="margin:0">${esc(V.group.name)}</h2><div class="sub">${ts.length} songs</div></div><button class="btn" data-act="play-group">${svg('play', 18)} Play</button><button class="btn ghost" data-act="shuffle-group">${svg('shuffle', 18)} Shuffle</button></div>${contextSearchControls(ts, key, 'Search this ' + label + '...')}<div id="context-search-results">${rows || '<div class="sub" style="padding:14px 0">No tracks in this view yet.</div>'}</div></div>`;
   }
   if (cat === 'duplicates') {
     const exactGroups = (V.hashDuplicateGroups || []).map((group) => ({ ...group, tracks: group.ids.map(track).filter(Boolean) })).filter((group) => group.tracks.length > 1);
@@ -563,9 +568,12 @@ function pagePlaylists() {
 function pagePlaylist() {
   const id = V.arg, smart = id.startsWith('s:'), sm = smart ? SMART.find((s) => s.id === id) : null, p = smart ? null : S.playlists.find((x) => x.id === id);
   if (!sm && !p) { V.page = 'playlists'; return pagePlaylists(); }
-  const ts = plTracks(id), k = reg(ids(ts));
-  const rows = ts.map((t, i) => (smart ? trow(t, k, i) : trow(t, k, i, `<button class="icon" data-act="pl-up" data-pl="${id}" data-i="${i}">${svg('up', 20)}</button><button class="icon" data-act="pl-down" data-pl="${id}" data-i="${i}">${svg('down', 20)}</button><button class="icon" data-act="pl-rm" data-pl="${id}" data-i="${i}">${svg('close', 18)}</button>`))).join('');
-  return `<div class="page"><button class="chip" data-act="nav" data-page="playlists">&larr; Playlists</button><div class="split" style="margin-top:16px">${collage(ts.slice(0, 4), 'big')}<div class="grow"><h1>${esc(sm ? sm.n : p.name)}</h1><div class="sub">${ts.length} songs · ${Math.floor(ts.reduce((a, t) => a + t.duration, 0) / 60)} min${smart ? ' · Auto playlist' : p.folderId ? ' · ' + esc((S.playlistFolders.find((folder) => folder.id === p.folderId) || {}).name || 'Folder') : ''}</div><div class="toolbar"><button class="btn" data-act="play-pl" data-pl="${id}">${svg('play', 18)} Play</button><button class="btn ghost" data-act="shuffle-pl" data-pl="${id}">${svg('shuffle', 18)} Shuffle</button>${smart ? '' : `<button class="btn ghost" data-act="move-pl-folder" data-pl="${id}">Move to folder</button><button class="btn ghost" data-act="rename-pl" data-pl="${id}">Rename</button><button class="btn danger" data-act="del-pl" data-pl="${id}">Delete</button>`}</div></div></div><div style="margin-top:16px">${rows || emptyState(smart ? 'Nothing here yet' : 'This playlist is empty', smart ? 'Play some songs and they will show up here.' : 'Use the ... menu on any song to add it.')}</div></div>`;
+  const ts = plTracks(id), key = contextSearchKey('playlist', id);
+  setContextSearchOwner(key);
+  const entries = window.NyxenQueueUtils.filterEntries(ts, contextSearchQuery);
+  const rows = contextPlaylistRows(id, smart, entries);
+  const empty = ts.length ? '<div class="sub" style="padding:14px 0">No tracks match this search.</div>' : emptyState(smart ? 'Nothing here yet' : 'This playlist is empty', smart ? 'Play some songs and they will show up here.' : 'Use the ... menu on any song to add it.');
+  return `<div class="page"><button class="chip" data-act="nav" data-page="playlists">&larr; Playlists</button><div class="split" style="margin-top:16px">${collage(ts.slice(0, 4), 'big')}<div class="grow"><h1>${esc(sm ? sm.n : p.name)}</h1><div class="sub">${ts.length} songs · ${Math.floor(ts.reduce((a, t) => a + t.duration, 0) / 60)} min${smart ? ' · Auto playlist' : p.folderId ? ' · ' + esc((S.playlistFolders.find((folder) => folder.id === p.folderId) || {}).name || 'Folder') : ''}</div><div class="toolbar"><button class="btn" data-act="play-pl" data-pl="${id}">${svg('play', 18)} Play</button><button class="btn ghost" data-act="shuffle-pl" data-pl="${id}">${svg('shuffle', 18)} Shuffle</button>${smart ? '' : `<button class="btn ghost" data-act="move-pl-folder" data-pl="${id}">Move to folder</button><button class="btn ghost" data-act="rename-pl" data-pl="${id}">Rename</button><button class="btn danger" data-act="del-pl" data-pl="${id}">Delete</button>`}</div></div></div>${contextSearchControls(ts, key, 'Search this playlist...')}<div id="context-search-results" style="margin-top:16px">${rows || empty}</div></div>`;
 }
 const slider = (id, label, min, max, step, val, unit) => `<div class="split" style="margin:6px 0"><span style="width:110px">${label}</span><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${val}"><span id="${id}-v" style="width:60px;text-align:right">${val}${unit}</span></div>`;
 function pageStudio() {
@@ -674,6 +682,45 @@ function updatePlayerUI() {
   document.title = cur ? `${cur.title} · NyxenPlayer` : 'NyxenPlayer'; updateProgress();
 }
 let queueQuery = '';
+let contextSearchOwner = '', contextSearchQuery = '';
+function contextSearchKey(kind, ...parts) { return JSON.stringify([kind, ...parts]); }
+function setContextSearchOwner(key) {
+  if (contextSearchOwner !== key) { contextSearchOwner = key; contextSearchQuery = ''; }
+}
+function contextSearchControls(ts, key, placeholder) {
+  const count = window.NyxenQueueUtils.filterEntries(ts, contextSearchQuery).length;
+  return `<div class="toolbar" style="margin-top:14px"><input id="context-search" class="field" style="flex:1;min-width:220px" data-context-key="${esc(key)}" placeholder="${esc(placeholder)}" aria-label="${esc(placeholder)}" value="${esc(contextSearchQuery)}" autocomplete="off"><button class="chip" data-act="context-search-clear" ${contextSearchQuery ? '' : 'disabled'}>Clear</button></div><div class="sub" id="context-search-count" style="margin:0 0 8px">${count} of ${ts.length} tracks</div>`;
+}
+function contextPlaylistRows(id, smart, entries) {
+  const ctx = reg(ids(entries.map((entry) => entry.track)));
+  return entries.map(({ track: t, index }, i) => {
+    const controls = smart ? '' : `${contextSearchQuery ? '' : `<button class="icon" data-act="pl-up" data-pl="${id}" data-i="${index}" title="Move up">${svg('up', 20)}</button><button class="icon" data-act="pl-down" data-pl="${id}" data-i="${index}" title="Move down">${svg('down', 20)}</button>`}<button class="icon" data-act="pl-rm" data-pl="${id}" data-i="${index}" title="Remove from playlist">${svg('close', 18)}</button>`;
+    return trow(t, ctx, i, controls);
+  }).join('');
+}
+function contextGroupRows(entries) {
+  const ctx = reg(ids(entries.map((entry) => entry.track)));
+  return entries.map(({ track: t }, i) => trow(t, ctx, i)).join('');
+}
+function renderContextSearchResults(key) {
+  const count = $('#context-search-count'), results = $('#context-search-results');
+  if (!count || !results) return;
+  let tracks = [], entries = [], rows = '';
+  if (V.page === 'playlist' && key === contextSearchKey('playlist', V.arg)) {
+    const id = V.arg, smart = id.startsWith('s:');
+    tracks = plTracks(id);
+    entries = window.NyxenQueueUtils.filterEntries(tracks, contextSearchQuery);
+    rows = contextPlaylistRows(id, smart, entries);
+  } else if (V.page === 'library' && V.group && key === contextSearchKey('group', V.group.cat, V.group.name)) {
+    tracks = groupTracks();
+    entries = window.NyxenQueueUtils.filterEntries(tracks, contextSearchQuery);
+    rows = contextGroupRows(entries);
+  } else return;
+  count.textContent = `${entries.length} of ${tracks.length} tracks`;
+  results.innerHTML = rows || `<div class="sub" style="padding:14px 0">${contextSearchQuery ? 'No tracks match this search.' : 'No tracks in this view yet.'}</div>`;
+  const clear = $('[data-act="context-search-clear"]');
+  if (clear) clear.disabled = !contextSearchQuery;
+}
 function queueMatches() {
   return Q.ids.map((id, index) => ({ track: track(id), index }))
     .filter((entry) => entry.track && window.NyxenQueueUtils.matchesTrack(entry.track, queueQuery));
@@ -1130,6 +1177,13 @@ const ACT = {
   'np-close': () => $('#np').classList.add('off'),
   'queue-toggle': () => { const q = $('#queue'); q.classList.toggle('off'); renderQueue(); },
   'queue-search-clear': () => { queueQuery = ''; renderQueue(); $('#queue-search')?.focus(); },
+  'context-search-clear': () => {
+    const input = $('#context-search');
+    contextSearchQuery = '';
+    if (input) input.value = '';
+    renderContextSearchResults(input?.dataset.contextKey);
+    input?.focus();
+  },
   'q-jump': (d) => { Q.i = +d.i; loadCurrent(true); },
   'q-up': (d) => moveQueueItem(+d.i, +d.i - 1),
   'q-down': (d) => moveQueueItem(+d.i, +d.i + 1),
@@ -1364,6 +1418,10 @@ document.addEventListener('input', (e) => {
     if (results) results.innerHTML = queueRows(entries);
     const clear = $('[data-act="queue-search-clear"]');
     if (clear) clear.disabled = !queueQuery;
+  }
+  else if (t.id === 'context-search') {
+    contextSearchQuery = t.value;
+    renderContextSearchResults(t.dataset.contextKey);
   }
   else if (t.id === 'sortsel') { S.settings.sort = t.value; save(); render(); }
   else if (t.dataset && t.dataset.band !== undefined) { const i = +t.dataset.band; S.settings.gains[i] = +t.value; S.settings.preset = 'Custom'; t.previousElementSibling.textContent = (+t.value > 0 ? '+' : '') + t.value; applyFx(); save(); }
