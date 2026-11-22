@@ -84,3 +84,25 @@ test('unknown field prefixes remain searchable as ordinary text', () => {
   assert.equal(matchesTrack(tracks[0], 'composer:bach'), false);
   assert.equal(matchesTrack({ title: 'Composer:bach' }, 'composer:bach'), true);
 });
+
+
+test('filterEntries preserves original indexes for filtered playlist actions', () => {
+  const entries = filterEntries(tracks, 'artist:alone');
+  assert.deepEqual(entries.map((entry) => entry.index), [1]);
+  assert.deepEqual(entries.map((entry) => entry.track), [tracks[1]]);
+});
+
+test('filterEntries keeps repeated occurrences distinct with their source indexes', () => {
+  const queue = [tracks[0], tracks[1], tracks[0], tracks[2]];
+  const entries = filterEntries(queue, 'artist:m83');
+  assert.deepEqual(entries.map((entry) => entry.index), [0, 2]);
+  assert.deepEqual(entries.map((entry) => entry.track.id), ['1', '1']);
+});
+
+test('filterEntries returns every source entry for an empty query', () => {
+  assert.deepEqual(filterEntries(tracks, '').map((entry) => entry.index), [0, 1, 2]);
+});
+
+test('filterEntries safely handles non-array input', () => {
+  assert.deepEqual(filterEntries(null, 'anything'), []);
+});
