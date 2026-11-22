@@ -73,9 +73,15 @@
     });
   }
 
-  function filterTracks(tracks, query) {
-    return Array.isArray(tracks) ? tracks.filter((track) => matchesTrack(track, query)) : [];
+  function filterEntries(tracks, query) {
+    return Array.isArray(tracks)
+      ? tracks.map((track, index) => ({ track, index })).filter((entry) => matchesTrack(entry.track, query))
+      : [];
   }
 
-  return { moveItem, parseTrackQuery, matchesTrack, filterTracks };
+  function filterTracks(tracks, query) {
+    return filterEntries(tracks, query).map((entry) => entry.track);
+  }
+
+  return { moveItem, parseTrackQuery, matchesTrack, filterTracks, filterEntries };
 });
