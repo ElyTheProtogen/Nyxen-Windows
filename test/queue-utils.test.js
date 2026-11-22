@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { moveItem, parseTrackQuery, matchesTrack, filterTracks } = require('../src/queue-utils');
+const { moveItem, parseTrackQuery, matchesTrack, filterTracks, filterEntries } = require('../src/queue-utils');
 
 test('moves an item down while keeping the current track selected', () => {
   const result = moveItem(['a', 'b', 'c', 'd'], 1, 0, 3);
