@@ -689,7 +689,7 @@ function setContextSearchOwner(key) {
 }
 function contextSearchControls(ts, key, placeholder) {
   const count = window.NyxenQueueUtils.filterEntries(ts, contextSearchQuery).length;
-  return `<div class="toolbar" style="margin-top:14px"><input id="context-search" class="field" style="flex:1;min-width:220px" data-context-key="${esc(key)}" placeholder="${esc(placeholder)}" aria-label="${esc(placeholder)}" value="${esc(contextSearchQuery)}" autocomplete="off"><button class="chip" data-act="context-search-clear" ${contextSearchQuery ? '' : 'disabled'}>Clear</button></div><div class="sub" id="context-search-count" aria-live="polite" style="margin:0 0 8px">${count} of ${ts.length} tracks</div>`;
+  return `<div class="toolbar" style="margin-top:14px"><input id="context-search" class="field" style="flex:1;min-width:220px" data-context-key="${esc(key)}" placeholder="${esc(placeholder)}" aria-label="${esc(placeholder)}" aria-controls="context-search-results" value="${esc(contextSearchQuery)}" autocomplete="off"><button class="chip" data-act="context-search-clear" ${contextSearchQuery ? '' : 'disabled'}>Clear</button></div><div class="sub" id="context-search-count" aria-live="polite" style="margin:0 0 8px">${count} of ${ts.length} tracks</div>`;
 }
 function contextPlaylistRows(id, smart, entries) {
   const ctx = reg(ids(entries.map((entry) => entry.track)));
