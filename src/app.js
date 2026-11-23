@@ -457,6 +457,20 @@ function pageHome() {
   const recent = SMART[1].f(S.tracks).slice(0, 14), most = SMART[0].f(S.tracks).slice(0, 14);
   const favs = S.tracks.filter((t) => t.fav).slice(0, 20), added = [...S.tracks].sort((a, b) => b.added - a.added).slice(0, 14);
   let h = `<div class="page"><div class="hello"><div class="grow"><div class="sub">${greeting()}</div><h1>${'Listener'}</h1><div class="sub">${S.tracks.length} songs in your library</div></div></div>`;
+  if (V.missingScanDone && !V.missingScanError && V.missingScanSummary) {
+    const health = window.NyxenLibraryHealthUtils.summarize(S.tracks, V.missingTrackIds, V.missingScanSummary);
+    const cards = [
+      ['Available', health.available],
+      ['Missing', health.missing],
+      ['Inaccessible', health.inaccessible],
+      ['Unverified', health.unverified],
+      ['Metadata gaps', health.metadataIncomplete]
+    ];
+    const stats = cards.map(([label, count]) => `<div class="glass" style="padding:12px 16px;min-width:110px;flex:1"><div class="sub">${esc(label)}</div><b style="font-size:20px">${count}</b></div>`).join('');
+    const gaps = Object.entries(health.metadataGaps).filter(([, count]) => count > 0)
+      .map(([field, count]) => `${esc(field)}: ${count}`).join(' · ');
+    h += `<section aria-label="Library health report"><h2>Library health</h2><p class="sub">Read-only snapshot from the latest file check and your saved metadata. Scan again after library changes.</p><div class="toolbar" style="display:flex;flex-wrap:wrap;gap:10px">${stats}</div>${gaps ? `<p class="sub">Missing metadata — ${gaps}</p>` : '<p class="sub">No missing metadata fields detected.</p>'}</section>`;
+  }
   if (!S.tracks.length) return h + emptyState('Your library is empty', 'Add a folder with your music to get started.', 'Import a folder', 'import-folder') + '</div>';
   h += `<div class="tiles">${tile('shuffle', 'Shuffle all', 'shuffle-all')}${tile('fav', 'Favorites', 'go-fav')}${tile('trend', 'Most replayed', 'open-pl', 'data-pl="s:most"')}${tile('history', 'Recently played', 'open-pl', 'data-pl="s:recent"')}</div>`;
   const car = (title, list) => { if (!list.length) return ''; const k = reg(ids(list)); return `<h2>${title}</h2><div class="row">${list.map((t, i) => card(t, k, i)).join('')}</div>`; };
