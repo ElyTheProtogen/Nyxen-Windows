@@ -310,3 +310,19 @@ h2 { letter-spacing: -.025em; }
 .duplicate-group > .split { align-items: center; margin-bottom: 8px; }
 .duplicate-path { max-width: 28%; overflow: hidden; color: var(--text-muted, rgba(255,255,255,.58)); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .duplicate-error { color: #ff9b9b; }
+
+
+/* Missing-file review and relinking */
+.missing-panel { margin-top: 14px; }
+.missing-panel > .split { align-items: center; margin-bottom: 10px; }
+.missing-panel > .split h2 { margin: 0 0 4px; }
+.missing-row { display: flex; align-items: center; gap: 14px; padding: 12px 2px; border-top: 1px solid rgba(255,255,255,.07); }
+.missing-row .grow { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.missing-row .grow > span { color: var(--text-muted, rgba(255,255,255,.62)); font-size: 12px; }
+.missing-row small { color: var(--text-muted, rgba(255,255,255,.48)); font-size: 11px; overflow-wrap: anywhere; }
+.missing-row .btn { flex: none; }
+.missing-error { color: #ff9b9b; }
+.missing-summary { margin-top: 10px; }
+@media (max-width: 760px) {
+  .missing-row { align-items: flex-start; flex-direction: column; }
+}

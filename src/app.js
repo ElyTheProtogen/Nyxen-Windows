@@ -403,7 +403,7 @@ async function applyCoverAccent() {
 }
 
 /* ================= UI helpers ================= */
-const V = { page: 'home', arg: null, group: null, q: '', sf: 'all', selected: [], hashDuplicateGroups: null, hashScanSummary: null, hashScanBusy: false, hashScanProgress: null, hashScanError: '' };
+const V = { page: 'home', arg: null, group: null, q: '', sf: 'all', selected: [], hashDuplicateGroups: null, hashScanSummary: null, hashScanBusy: false, hashScanProgress: null, hashScanError: '', missingTrackIds: [], missingScanDone: false, missingScanBusy: false, missingScanSummary: null, missingScanError: '', folderRelinkBusy: false, metadataFilter: 'all' };
 let ctn = 0; const CTX = new Map();
 const reg = (list) => { const k = ++ctn; CTX.set(k, list); if (CTX.size > 40) CTX.delete(CTX.keys().next().value); return k; };
 const ids = (list) => list.map((t) => t.id);
@@ -457,6 +457,20 @@ function pageHome() {
   const recent = SMART[1].f(S.tracks).slice(0, 14), most = SMART[0].f(S.tracks).slice(0, 14);
   const favs = S.tracks.filter((t) => t.fav).slice(0, 20), added = [...S.tracks].sort((a, b) => b.added - a.added).slice(0, 14);
   let h = `<div class="page"><div class="hello"><div class="grow"><div class="sub">${greeting()}</div><h1>${'Listener'}</h1><div class="sub">${S.tracks.length} songs in your library</div></div></div>`;
+  if (V.missingScanDone && !V.missingScanError && V.missingScanSummary) {
+    const health = window.NyxenLibraryHealthUtils.summarize(S.tracks, V.missingTrackIds, V.missingScanSummary);
+    const cards = [
+      ['Available', health.available],
+      ['Missing', health.missing],
+      ['Inaccessible', health.inaccessible],
+      ['Unverified', health.unverified],
+      ['Metadata gaps', health.metadataIncomplete]
+    ];
+    const stats = cards.map(([label, count]) => `<div class="glass" style="padding:12px 16px;min-width:110px;flex:1"><div class="sub">${esc(label)}</div><b style="font-size:20px">${count}</b></div>`).join('');
+    const gaps = Object.entries(health.metadataGaps).filter(([, count]) => count > 0)
+      .map(([field, count]) => `${esc(field)}: ${count}`).join(' · ');
+    h += `<section aria-label="Library health report"><h2>Library health</h2><p class="sub">Read-only snapshot from the latest file check and your saved metadata. Scan again after library changes.</p><div class="toolbar" style="display:flex;flex-wrap:wrap;gap:10px">${stats}</div>${gaps ? `<p class="sub">Missing metadata — ${gaps}</p>` : '<p class="sub">No missing metadata fields detected.</p>'}</section>`;
+  }
   if (!S.tracks.length) return h + emptyState('Your library is empty', 'Add a folder with your music to get started.', 'Import a folder', 'import-folder') + '</div>';
   h += `<div class="tiles">${tile('shuffle', 'Shuffle all', 'shuffle-all')}${tile('fav', 'Favorites', 'go-fav')}${tile('trend', 'Most replayed', 'open-pl', 'data-pl="s:most"')}${tile('history', 'Recently played', 'open-pl', 'data-pl="s:recent"')}</div>`;
   const car = (title, list) => { if (!list.length) return ''; const k = reg(ids(list)); return `<h2>${title}</h2><div class="row">${list.map((t, i) => card(t, k, i)).join('')}</div>`; };
@@ -465,12 +479,20 @@ function pageHome() {
 function pageLibrary() {
   const cats = [['tracks', 'Tracks'], ['albums', 'Albums'], ['artists', 'Artists'], ['genres', 'Genres'], ['favorites', 'Favorites'], ['duplicates', 'Duplicates']];
   const cat = S.settings.cat;
-  let h = `<div class="page"><div class="split"><div class="grow"><h1>Library</h1><div class="sub">${S.tracks.length} songs · ${new Set(S.tracks.map((t) => t.album)).size} albums</div></div><button class="btn" data-act="import-folder">${svg('add', 18)} Import folder</button><button class="btn ghost" data-act="import-files">Import files</button></div>`;
+  let h = `<div class="page"><div class="split"><div class="grow"><h1>Library</h1><div class="sub">${S.tracks.length} songs · ${new Set(S.tracks.map((t) => t.album)).size} albums</div></div><button class="btn" data-act="import-folder">${svg('add', 18)} Import folder</button><button class="btn ghost" data-act="import-files">Import files</button><button class="btn ghost" data-act="scan-missing-files" ${V.missingScanBusy ? 'disabled' : ''}>${V.missingScanBusy ? 'Checking files…' : 'Check missing files'}</button></div>`;
   h += `<div class="toolbar">${cats.map(([k, n]) => `<button class="chip ${cat === k ? 'on' : ''}" data-act="cat" data-cat="${k}">${n}</button>`).join('')}`;
   if (cat === 'tracks' && !V.group) h += `<span class="grow"></span><select id="sortsel">${Object.entries(SORTS).map(([k, n]) => `<option value="${k}" ${S.settings.sort === k ? 'selected' : ''}>${n}</option>`).join('')}</select><button class="icon" data-act="sort-dir" title="Sort direction">${S.settings.asc ? '&#9650;' : '&#9660;'}</button><button class="btn ghost" data-act="shuffle-all">${svg('shuffle', 18)} Shuffle all</button>`;
   if (['tracks','favorites','duplicates'].includes(cat)) h += `<span class="sub">${V.selected.length} selected</span>${V.selected.length ? `<button class="chip" data-act="bulk-fav">Toggle favorites</button><button class="chip" data-act="bulk-pl">Add to playlist</button><button class="chip" data-act="bulk-rm">Remove selected</button><button class="chip" data-act="clear-sel">Clear</button>` : ''}`;
   if (cat === 'duplicates') h += `<button class="btn ghost" data-act="scan-exact-duplicates" ${V.hashScanBusy ? 'disabled' : ''}>${V.hashScanBusy ? 'Scanning…' : 'Scan exact file duplicates'}</button>`;
   h += '</div>';
+  if (V.missingScanBusy || V.missingScanDone || V.missingScanError) {
+    const missingTracks = (V.missingTrackIds || []).map(track).filter(Boolean);
+    const summary = V.missingScanSummary;
+    const detail = summary ? `${summary.checked} checked · ${summary.inaccessible} inaccessible · ${summary.unverified} unverified` : '';
+    const folderRelinkButton = missingTracks.length ? `<button class="btn ghost" data-act="relink-missing-folder" ${V.folderRelinkBusy || V.missingScanBusy ? 'disabled' : ''}>${V.folderRelinkBusy ? 'Preparing…' : 'Relink moved folder'}</button>` : '';
+    const rows = missingTracks.map((t) => `<div class="missing-row"><div class="grow"><b>${esc(t.title)}</b><span>${esc(t.artist)} · ${esc(t.path.split(String.fromCharCode(92)).pop().split('/').pop())}</span><small title="${esc(t.path)}">${esc(t.path)}</small></div><button class="btn ghost" data-act="relink-missing-track" data-id="${esc(t.id)}">Relink file</button></div>`).join('');
+    h += `<section class="glass missing-panel"><div class="split"><div class="grow"><h2>Missing files</h2><p class="sub">Nyxen checks saved paths only. Relinking updates the library reference and keeps playlists, queue and lyrics connected.</p></div>${folderRelinkButton}<span class="sub">${V.missingScanBusy ? 'Scanning…' : missingTracks.length + ' missing'}</span></div>${V.missingScanBusy ? '<p class="sub">Checking your saved audio paths…</p>' : V.missingScanError ? `<p class="missing-error">${esc(V.missingScanError)}</p>` : missingTracks.length ? rows : (summary && (summary.inaccessible || summary.unverified) ? '<p class="sub">Some paths could not be verified. Check file permissions and saved library entries.</p>' : '<p class="sub">All saved audio files are available.</p>')}${detail ? `<p class="sub missing-summary">${esc(detail)}</p>` : ''}</section>`;
+  }
   if (!S.tracks.length) return h + emptyState('Your library is empty', 'Add a folder with your music to get started.', 'Import a folder', 'import-folder') + '</div>';
   if (V.group) {
     const ts = groupTracks(), k = reg(ids(ts));
@@ -500,7 +522,10 @@ function pageLibrary() {
     return h + `<section class="glass duplicate-panel"><div class="split"><div class="grow"><h2>Exact file duplicates</h2><p>SHA-256 checks identify identical file contents, regardless of filename or metadata. Files with unique sizes are skipped because they cannot be byte-identical.</p></div></div><div class="sub" id="hash-scan-status">${esc(status)}</div>${V.hashScanError ? `<p class="duplicate-error">${esc(V.hashScanError)}</p>` : ''}${exactHtml}</section><section class="glass duplicate-panel"><h2>Possible metadata duplicates</h2><p class="sub">These tracks share a normalized title and artist. They may be different recordings or encodings; review before removing anything.</p>${metadataHtml}</section></div>`;
   }
   if (cat === 'tracks' || cat === 'favorites') {
-    const ts = cat === 'tracks' ? sortTracks(S.tracks) : sortTracks(S.tracks.filter(t=>t.fav)); const k = reg(ids(ts));
+    const source = cat === 'tracks' ? S.tracks : S.tracks.filter(t=>t.fav);
+    const ts = sortTracks(window.NyxenLibraryHealthUtils.filterMetadata(source, V.metadataFilter)); const k = reg(ids(ts));
+    const filters = [['all','All metadata'],['any','Any missing field'],['title','Missing title'],['artist','Missing artist'],['album','Missing album'],['genre','Missing genre']];
+    h += `<section class="glass"><div class="split"><div class="grow"><h3>Metadata completeness</h3><p class="sub">Review saved metadata without changing original audio files.</p></div><span class="sub">${ts.length} of ${source.length} tracks</span></div><div class="toolbar">${filters.map(([key,label]) => `<button class="chip ${V.metadataFilter === key ? 'on' : ''}" aria-pressed="${V.metadataFilter === key}" data-act="metadata-filter" data-key="${key}">${label}</button>`).join('')}</div></section>`;
     return h + (ts.length ? ts.map((t, i) => trow(t, k, i, `<button class="icon ${V.selected.includes(t.id) ? 'on' : ''}" data-act="select-track" data-id="${t.id}" title="Select">${V.selected.includes(t.id) ? '✓' : '＋'}</button>`)).join('') : emptyState('No tracks here yet', 'Add music or change your filters.')) + '</div>';
   }
   const field = { albums: 'album', artists: 'artist', genres: 'genre' }[cat]; const map = new Map();
@@ -778,6 +803,7 @@ async function importTargets(targets, folders, silent) {
   try {
     const r = await window.nyxen.scan(targets, S.tracks.map((t) => t.id));
     r.added.forEach((t) => S.tracks.push(t));
+    V.missingTrackIds = []; V.missingScanDone = false; V.missingScanSummary = null; V.missingScanError = '';
     if (r.added.length) invalidateDuplicateScan();
     folders.forEach((f) => { if (!S.folders.includes(f)) S.folders.push(f); });
     S.lastScan = Date.now(); reindex(); save();
@@ -786,6 +812,169 @@ async function importTargets(targets, folders, silent) {
   } catch { toast('Import failed'); }
   importing = false; $('#sidefoot').textContent = '';
 }
+async function scanMissingFiles() {
+  if (V.missingScanBusy || !S.tracks.length) return;
+  V.missingScanBusy = true; V.missingScanDone = false; V.missingScanError = '';
+  render();
+  try {
+    const result = await window.nyxen.findMissingFiles(S.tracks.map(({ id, path }) => ({ id, path })));
+    V.missingTrackIds = Array.isArray(result.missingIds) ? result.missingIds : [];
+    V.missingScanSummary = { checked: result.checked || 0, inaccessible: result.inaccessible || 0, unverified: result.unverified || 0 };
+    V.missingScanDone = true;
+    toast(V.missingTrackIds.length ? `Found ${V.missingTrackIds.length} missing audio files` : 'All saved audio files are available');
+  } catch (error) {
+    V.missingScanError = error && error.message ? error.message : 'Could not check saved audio paths';
+    V.missingScanDone = true;
+    toast(V.missingScanError);
+  } finally {
+    V.missingScanBusy = false;
+    render();
+  }
+}
+async function relinkMissingTrack(id) {
+  const item = track(id);
+  if (!item) return;
+  const oldId = item.id;
+  const wasCurrent = cur === item;
+  const wasPlaying = wasCurrent && !audio.paused;
+  const position = wasCurrent ? (Number(audio.currentTime) || Number(S.last.pos) || 0) : 0;
+  try {
+    const result = await window.nyxen.relinkTrack(
+      { id: oldId, path: item.path },
+      S.tracks.filter((candidate) => candidate.id !== oldId).map((candidate) => candidate.id)
+    );
+    if (!result || result.status === 'cancelled') return;
+    if (result.status === 'duplicate') { toast('That file is already in your library'); return; }
+    if (result.status !== 'ok') {
+      const messages = { unsupported: 'Choose a supported audio file', unavailable: 'The selected file is not available', unverified: 'Nyxen could not verify this saved track path', invalid: 'This track cannot be relinked' };
+      toast(messages[result.status] || 'Could not relink this track');
+      return;
+    }
+
+    const updated = window.NyxenMissingFileUtils.applyRelink(S, oldId, result.id, result.path);
+    if (!updated) { toast('Relinking would create a duplicate library entry'); return; }
+    updated.cover = !!result.coverAvailable;
+    Q.ids = Q.ids.map((queuedId) => queuedId === oldId ? result.id : queuedId);
+    if (Q.orig) Q.orig = Q.orig.map((queuedId) => queuedId === oldId ? result.id : queuedId);
+    V.selected = V.selected.map((selectedId) => selectedId === oldId ? result.id : selectedId);
+    V.missingTrackIds = (V.missingTrackIds || []).filter((missingId) => missingId !== oldId);
+
+    if (wasCurrent) {
+      audio.pause();
+      resumePos = position;
+      if (wasPlaying) audio.addEventListener('loadedmetadata', () => play(), { once: true });
+      audio.src = fileUrl(updated.path);
+      audio.load();
+    }
+    reindex(); invalidateDuplicateScan(); save(); applyCoverAccent();
+    updatePlayerUI(); render(); renderQueue();
+    toast('Track relinked; playlists, queue and metadata were preserved');
+  } catch {
+    toast('Could not relink this track');
+  }
+}
+async function relinkMissingFolder() {
+  if (V.folderRelinkBusy) return;
+  const missing = (V.missingTrackIds || []).map(track).filter(Boolean);
+  if (!missing.length) return;
+
+  V.folderRelinkBusy = true;
+  render();
+  let token = '';
+  try {
+    const preview = await window.nyxen.previewFolderRelink(
+      missing.map(({ id, path }) => ({ id, path })),
+      S.tracks.map((item) => item.id)
+    );
+    if (!preview || preview.status === 'cancelled') return;
+    if (preview.status === 'no-common-root') {
+      toast('These missing tracks do not share one source folder tree. Relink them individually or check one folder at a time.');
+      return;
+    }
+    if (preview.status === 'no-matches') {
+      toast('No files matched the original relative paths in the selected folder.');
+      return;
+    }
+    if (preview.status !== 'preview' || !preview.token) {
+      const messages = {
+        invalid: 'The missing-file list is invalid',
+        'too-large': 'This library is too large for one folder relink',
+        'no-missing': 'No verified missing files remain',
+        'invalid-folder': 'Choose an accessible music folder'
+      };
+      toast(messages[preview.status] || 'Could not prepare the folder relink');
+      return;
+    }
+
+    token = preview.token;
+    const skipped = [];
+    if (preview.unmatched) skipped.push(preview.unmatched + ' not found');
+    if (preview.conflicts) skipped.push(preview.conflicts + ' conflicts');
+    if (preview.inaccessible) skipped.push(preview.inaccessible + ' inaccessible');
+    if (preview.stale) skipped.push(preview.stale + ' no longer missing');
+    if (preview.unverified) skipped.push(preview.unverified + ' unverified');
+    const detail = skipped.length ? ' · ' + skipped.join(' · ') : '';
+    const message = preview.matches + ' exact relative-path matches' + detail +
+      '. Source: ' + preview.sourceRoot + '. New folder: ' + preview.destinationRoot +
+      '. Nyxen will update library references only; original audio files will not be moved, copied or modified. Continue?';
+
+    if (!await confirmBox('Relink moved folder?', message, 'Relink ' + preview.matches + ' tracks')) {
+      await window.nyxen.cancelFolderRelink(token);
+      token = '';
+      return;
+    }
+
+    const result = await window.nyxen.commitFolderRelink(token, S.tracks.map((item) => item.id));
+    token = '';
+    if (!result || result.status !== 'ok' || !Array.isArray(result.matches) || !result.matches.length) {
+      toast('No files could be relinked safely. Run the missing-file check again.');
+      return;
+    }
+
+    const mapping = new Map(result.matches.map((item) => [item.oldId, item.newId]));
+    const wasCurrent = !!(cur && mapping.has(cur.id));
+    const wasPlaying = wasCurrent && !audio.paused;
+    const position = wasCurrent ? (Number(audio.currentTime) || Number(S.last.pos) || 0) : 0;
+    const updated = window.NyxenMissingFileUtils.applyRelinks(S, result.matches);
+    if (!updated) {
+      toast('The library changed during relinking. No library references were updated.');
+      return;
+    }
+
+    Q.ids = Q.ids.map((id) => mapping.get(id) || id);
+    if (Q.orig) Q.orig = Q.orig.map((id) => mapping.get(id) || id);
+    V.selected = V.selected.map((id) => mapping.get(id) || id);
+    V.missingTrackIds = (V.missingTrackIds || []).filter((id) => !mapping.has(id));
+
+    if (wasCurrent) {
+      audio.pause();
+      resumePos = position;
+      if (wasPlaying) audio.addEventListener('loadedmetadata', () => play(), { once: true });
+      audio.src = fileUrl(cur.path);
+      audio.load();
+    }
+
+    reindex();
+    invalidateDuplicateScan();
+    save();
+    applyCoverAccent();
+    updatePlayerUI();
+    render();
+    renderQueue();
+
+    const skippedCount = (result.stale || 0) + (result.inaccessible || 0) + (result.conflicts || 0);
+    toast(updated.length + ' tracks relinked' + (skippedCount ? '; ' + skippedCount + ' skipped' : ''));
+  } catch (error) {
+    toast(error && error.message ? error.message : 'Could not relink the moved folder');
+  } finally {
+    if (token) {
+      try { await window.nyxen.cancelFolderRelink(token); } catch {}
+    }
+    V.folderRelinkBusy = false;
+    render();
+  }
+}
+
 async function importVideoTargets(targets, folders = [], silent = false) {
   if (videoImporting || !targets.length) return;
   videoImporting = true;
@@ -908,6 +1097,7 @@ function enqueue(id, afterCurrent) {
 }
 function removeTrack(id) {
   S.tracks = S.tracks.filter((t) => t.id !== id);
+  V.missingTrackIds = (V.missingTrackIds || []).filter((missingId) => missingId !== id);
   invalidateDuplicateScan();
   S.playlists.forEach((p) => { p.ids = p.ids.filter((x) => x !== id); });
   const wasCur = !!(cur && cur.id === id);
@@ -1012,7 +1202,11 @@ const ACT = {
   back: () => { V.group = null; render(); },
   'play-group': () => playIds(ids(groupTracks()), 0),
   'shuffle-group': () => { const l = ids(groupTracks()); if (l.length) { setMode('shuffle'); playIds(l, Math.floor(Math.random() * l.length)); } },
-  cat: (d) => { S.settings.cat = d.cat; V.group = null; save(); render(); },
+  cat: (d) => { S.settings.cat = d.cat; V.group = null; V.metadataFilter = 'all'; save(); render(); },
+  'metadata-filter': (d) => { if (!['all','any','title','artist','album','genre'].includes(d.key)) return; V.metadataFilter = d.key; V.selected = []; render(); },
+  'scan-missing-files': () => scanMissingFiles(),
+  'relink-missing-track': (d) => relinkMissingTrack(d.id),
+  'relink-missing-folder': () => relinkMissingFolder(),
   'scan-exact-duplicates': async () => {
     if (V.hashScanBusy) return;
     V.hashScanBusy = true; V.hashScanProgress = { done: 0, total: 0 }; V.hashScanError = '';
