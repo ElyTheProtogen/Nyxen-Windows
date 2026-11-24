@@ -403,7 +403,7 @@ async function applyCoverAccent() {
 }
 
 /* ================= UI helpers ================= */
-const V = { page: 'home', arg: null, group: null, q: '', sf: 'all', selected: [], hashDuplicateGroups: null, hashScanSummary: null, hashScanBusy: false, hashScanProgress: null, hashScanError: '', missingTrackIds: [], missingScanDone: false, missingScanBusy: false, missingScanSummary: null, missingScanError: '', folderRelinkBusy: false };
+const V = { page: 'home', arg: null, group: null, q: '', sf: 'all', selected: [], hashDuplicateGroups: null, hashScanSummary: null, hashScanBusy: false, hashScanProgress: null, hashScanError: '', missingTrackIds: [], missingScanDone: false, missingScanBusy: false, missingScanSummary: null, missingScanError: '', folderRelinkBusy: false, metadataFilter: 'all' };
 let ctn = 0; const CTX = new Map();
 const reg = (list) => { const k = ++ctn; CTX.set(k, list); if (CTX.size > 40) CTX.delete(CTX.keys().next().value); return k; };
 const ids = (list) => list.map((t) => t.id);
@@ -522,7 +522,10 @@ function pageLibrary() {
     return h + `<section class="glass duplicate-panel"><div class="split"><div class="grow"><h2>Exact file duplicates</h2><p>SHA-256 checks identify identical file contents, regardless of filename or metadata. Files with unique sizes are skipped because they cannot be byte-identical.</p></div></div><div class="sub" id="hash-scan-status">${esc(status)}</div>${V.hashScanError ? `<p class="duplicate-error">${esc(V.hashScanError)}</p>` : ''}${exactHtml}</section><section class="glass duplicate-panel"><h2>Possible metadata duplicates</h2><p class="sub">These tracks share a normalized title and artist. They may be different recordings or encodings; review before removing anything.</p>${metadataHtml}</section></div>`;
   }
   if (cat === 'tracks' || cat === 'favorites') {
-    const ts = cat === 'tracks' ? sortTracks(S.tracks) : sortTracks(S.tracks.filter(t=>t.fav)); const k = reg(ids(ts));
+    const source = cat === 'tracks' ? S.tracks : S.tracks.filter(t=>t.fav);
+    const ts = sortTracks(window.NyxenLibraryHealthUtils.filterMetadata(source, V.metadataFilter)); const k = reg(ids(ts));
+    const filters = [['all','All metadata'],['any','Any missing field'],['title','Missing title'],['artist','Missing artist'],['album','Missing album'],['genre','Missing genre']];
+    h += `<section class="glass"><div class="split"><div class="grow"><h3>Metadata completeness</h3><p class="sub">Review saved metadata without changing original audio files.</p></div><span class="sub">${ts.length} of ${source.length} tracks</span></div><div class="toolbar">${filters.map(([key,label]) => `<button class="chip ${V.metadataFilter === key ? 'on' : ''}" aria-pressed="${V.metadataFilter === key}" data-act="metadata-filter" data-key="${key}">${label}</button>`).join('')}</div></section>`;
     return h + (ts.length ? ts.map((t, i) => trow(t, k, i, `<button class="icon ${V.selected.includes(t.id) ? 'on' : ''}" data-act="select-track" data-id="${t.id}" title="Select">${V.selected.includes(t.id) ? '✓' : '＋'}</button>`)).join('') : emptyState('No tracks here yet', 'Add music or change your filters.')) + '</div>';
   }
   const field = { albums: 'album', artists: 'artist', genres: 'genre' }[cat]; const map = new Map();
@@ -1199,7 +1202,8 @@ const ACT = {
   back: () => { V.group = null; render(); },
   'play-group': () => playIds(ids(groupTracks()), 0),
   'shuffle-group': () => { const l = ids(groupTracks()); if (l.length) { setMode('shuffle'); playIds(l, Math.floor(Math.random() * l.length)); } },
-  cat: (d) => { S.settings.cat = d.cat; V.group = null; save(); render(); },
+  cat: (d) => { S.settings.cat = d.cat; V.group = null; V.metadataFilter = 'all'; save(); render(); },
+  'metadata-filter': (d) => { if (!['all','any','title','artist','album','genre'].includes(d.key)) return; V.metadataFilter = d.key; V.selected = []; render(); },
   'scan-missing-files': () => scanMissingFiles(),
   'relink-missing-track': (d) => relinkMissingTrack(d.id),
   'relink-missing-folder': () => relinkMissingFolder(),
