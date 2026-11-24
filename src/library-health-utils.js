@@ -29,5 +29,13 @@
     };
   }
 
-  return { summarize };
+  function filterMetadata(tracks, field = 'all') {
+    const entries = Array.isArray(tracks) ? tracks : [];
+    if (field === 'all') return entries.slice();
+    if (field === 'any') return entries.filter(track => fields.some(key => missingValue(track?.[key])));
+    if (!fields.includes(field)) return [];
+    return entries.filter(track => missingValue(track?.[field]));
+  }
+
+  return { summarize, filterMetadata };
 });
