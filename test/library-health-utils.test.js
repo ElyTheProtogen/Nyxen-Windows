@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { summarize } = require('../src/library-health-utils');
+const { summarize, filterMetadata } = require('../src/library-health-utils');
 
 test('counts verified, missing, inaccessible and unverified tracks separately', () => {
   const tracks = [
@@ -34,4 +34,15 @@ test('handles invalid or stale scan counts safely', () => {
   assert.equal(result.missing, 1);
   assert.equal(result.inaccessible, 0);
   assert.equal(result.unverified, 0);
+});
+
+test('metadata filters preserve order and do not mutate the library', () => {
+  const tracks = [{ id: 'a', title: 'Song', artist: 'Unknown Artist', album: 'Album', genre: 'Rock' }, { id: 'b', title: 'Song', artist: 'Artist', album: 'Album', genre: '' }, { id: 'c', title: 'Song', artist: 'Artist', album: 'Album', genre: 'Rock' }];
+  const before = structuredClone(tracks);
+  assert.deepEqual(filterMetadata(tracks, 'any').map(t => t.id), ['a', 'b']);
+  assert.deepEqual(filterMetadata(tracks, 'artist').map(t => t.id), ['a']);
+  assert.deepEqual(filterMetadata(tracks, 'genre').map(t => t.id), ['b']);
+  assert.deepEqual(filterMetadata(tracks, 'all'), tracks);
+  assert.deepEqual(filterMetadata(tracks, 'invalid'), []);
+  assert.deepEqual(tracks, before);
 });
